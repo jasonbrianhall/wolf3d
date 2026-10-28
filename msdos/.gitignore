@@ -1,0 +1,6 @@
+build/
+csdpmi/
+csdpmi7b.zip*
+*.exe
+*.EXE
+embedded.exe
