@@ -42,6 +42,11 @@ used. A dead player comes back at the level start after three seconds;
 keys are shared. Esc leaves the game and the others play on. In Spear
 there's no BJ sprite, so the other players look like SS guards.
 
+``wolf3d /?`` lists the options. Sound and control settings can be set
+from the command line (``-sfx``, ``-music``, ``-digi``, ``-mouse``,
+``-joystick``, ``-sensitivity``, ``-viewsize``) and are saved when you
+quit; ``-defaults`` ignores the ``CONFIG`` file.
+
 Needs a 386 with a 387 (or a 486DX or later; else put ``EMU387.DXE``
 next to it) and 4 MB of RAM. Runs in plain DOS, FreeDOS, Windows 9x and
 DOSBox, not in Windows NT/XP's DOS box.

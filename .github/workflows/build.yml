@@ -84,8 +84,10 @@ jobs:
                      (not the DOS box of Windows NT/2000/XP).
           Sound:     set BLASTER=A220 I5 D1 (or similar) for the Sound
                      Blaster; AdLib, PC speaker and Sound Source work too.
-          Options:   nowait (skip the intros), nomouse, nojoys, noal, nosb,
-                     as in the original.
+          Options:   WOLF3D /? lists them. Settings can be changed without
+                     the menus, e.g. -music off -sfx pc -digi off, and are
+                     saved when you quit; -defaults ignores the CONFIG file.
+                     nowait, nomouse, nojoys, noal, nosb as in the original.
           Co-op:     IPX, 2 to 4 players. Everyone runs, with an IPX driver
                      loaded (in DOSBox: ipx=true, then IPXNET STARTSERVER on
                      one machine and IPXNET CONNECT <address> on the others):
