@@ -1,0 +1,121 @@
+name: Build MS-DOS Wolfenstein 3-D
+
+on:
+  push:
+    branches: [master, main, djgpp]
+    tags: ['v*']
+  pull_request:
+    branches: [master, main, djgpp]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: msdos
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            # Date-based version (UTC), e.g. v20261028
+            VERSION="v$(date -u +%Y%m%d)"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Using version: ${VERSION}"
+
+      # One exe per kind of game data (see VERSION in msdos/Makefile)
+      - name: Build wolf3d.exe / spear.exe (embedded CWSDPMI)
+        run: |
+          mkdir -p release
+          for v in wl6 wl6apo wl1 sod sdm; do
+            case $v in sod|sdm) exe=spear.exe ;; *) exe=wolf3d.exe ;; esac
+            make DOCKER=1 VERSION=$v msdos_embedded
+            dir=release/$(echo $v | tr a-z A-Z)
+            mkdir -p $dir
+            cp $exe $dir/$(echo $exe | tr a-z A-Z)
+            ls -la $dir
+          done
+
+      - name: Create release zip
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cat > release/README.TXT << EOF
+          Wolfenstein 3-D - MS-DOS / FreeDOS (DJGPP, 32-bit protected mode)
+
+          The id Software source built with DJGPP. No game data is included:
+          copy the data files of your copy of the game into the same
+          directory as the matching exe, and run it from there.
+
+          Pick the directory that matches your data:
+
+            WL6\WOLF3D.EXE     Wolfenstein 3-D 1.4, GT / Activision / id
+                               (the version sold on Steam and GOG)
+            WL6APO\WOLF3D.EXE  Wolfenstein 3-D 1.4, Apogee registered
+            WL1\WOLF3D.EXE     Wolfenstein 3-D 1.4, Apogee shareware
+            SOD\SPEAR.EXE      Spear of Destiny
+            SDM\SPEAR.EXE      Spear of Destiny demo
+
+          Files to copy next to the exe (the extension is WL6, WL1, SOD or
+          SDM, as your data has it; upper or lower case doesn't matter):
+
+            AUDIOHED.*  AUDIOT.*  GAMEMAPS.*  MAPHEAD.*
+            VGADICT.*   VGAGRAPH.*  VGAHEAD.*  VSWAP.*
+
+          Steam: Wolfenstein 3D\base     GOG: the game's install directory
+          (CONFIG.* and SAVEGAM?.* are made by the game; an existing CONFIG
+          from the original DOS game works, its saved games do not.)
+
+          If the exe doesn't match the data, it says so and which one to use.
+
+          Each exe is self-contained (CWSDPMI is built in).
+          Requires:  386+ with FPU (or EMU387.DXE from DJGPP next to it),
+                     4 MB RAM, VGA. Plain DOS, FreeDOS, Windows 9x or DOSBox
+                     (not the DOS box of Windows NT/2000/XP).
+          Sound:     set BLASTER=A220 I5 D1 (or similar) for the Sound
+                     Blaster; AdLib, PC speaker and Sound Source work too.
+          Options:   nowait (skip the intros), nomouse, nojoys, noal, nosb,
+                     as in the original.
+
+          Version:   ${VERSION}
+          Built from: ${GITHUB_REPOSITORY}@${GITHUB_SHA}
+          EOF
+          sed -i 's/$/\r/' release/README.TXT
+          cd release
+          zip -9 -r "../wolf3d-msdos-${VERSION}.zip" README.TXT WL6 WL6APO WL1 SOD SDM
+          cd ..
+          ls -la *.zip
+          unzip -l *.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wolf3d-msdos-${{ steps.version.outputs.version }}
+          path: msdos/wolf3d-msdos-*.zip
+          if-no-files-found: error
+
+      # Create / update a release for every successful build on master/main
+      # (or when a v* tag is pushed)
+      - name: Create GitHub Release
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version }}
+          files: msdos/wolf3d-msdos-*.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
