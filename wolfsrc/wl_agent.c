@@ -245,6 +245,9 @@ void StatusDrawPic (unsigned x, unsigned y, unsigned picnum)
 {
 	unsigned	temp;
 
+	if (!NetIsLocal ())
+		return;			// another player's status changed
+
 	temp = bufferofs;
 	bufferofs = 0;
 
@@ -307,7 +310,19 @@ int	facecount;
 void	UpdateFace (void)
 {
 
-	if (SD_SoundPlaying() == GETGATLINGSND)
+	if (netgame)
+	{
+		// the face waits for GETGATLINGSND; use time, not the local sound
+		if (gotgatgun)
+		{
+			facecount += tics;
+			if (facecount < 70)
+				return;
+			gotgatgun = 0;
+			facecount = 0;
+		}
+	}
+	else if (SD_SoundPlaying() == GETGATLINGSND)
 	  return;
 
 	facecount += tics;
@@ -385,6 +400,9 @@ void	DrawHealth (void)
 
 void	TakeDamage (int points,objtype *attacker)
 {
+	if (NetCurrentDead ())
+		return;
+
 	LastAttacker = attacker;
 
 	if (gamestate.victoryflag)
@@ -398,8 +416,13 @@ void	TakeDamage (int points,objtype *attacker)
 	if (gamestate.health<=0)
 	{
 		gamestate.health = 0;
-		playstate = ex_died;
-		killerobj = attacker;
+		if (netgame)
+			NetKillPlayer (attacker);
+		else
+		{
+			playstate = ex_died;
+			killerobj = attacker;
+		}
 	}
 
 	StartDamageFlash (points);
@@ -1136,6 +1159,13 @@ void	KnifeAttack (objtype *ob)
 	long	dist;
 
 	SD_PlaySound (ATKKNIFESND);
+	if (netgame)
+	{
+		closest = NetFindTarget (ob,true,&dist);
+		if (closest && dist <= 0x18000l)
+			DamageActor (closest,US_RndT() >> 4);
+		return;
+	}
 // actually fire
 	dist = 0x7fffffff;
 	closest = NULL;
@@ -1193,7 +1223,10 @@ void	GunAttack (objtype *ob)
 	viewdist = 0x7fffffffl;
 	closest = NULL;
 
-	while (1)
+	if (netgame)
+		closest = NetFindTarget (ob,false,&viewdist);
+
+	while (!netgame)
 	{
 		oldclosest = closest;
 
@@ -1220,6 +1253,8 @@ void	GunAttack (objtype *ob)
 			break;
 
 	}
+	if (!closest)
+		return;
 
 //
 // hit something

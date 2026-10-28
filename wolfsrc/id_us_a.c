@@ -62,3 +62,8 @@ US_RndT(void)
 	rndindex = (rndindex+1) & 0xff;
 	return rndtable[rndindex];
 }
+
+int US_RndIndex (void)
+{
+	return rndindex;
+}

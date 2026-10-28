@@ -1027,8 +1027,11 @@ void DrawScaleds (void)
 		if (TransformTile (statptr->tilex,statptr->tiley
 			,&visptr->viewx,&visptr->viewheight) && statptr->flags & FL_BONUS)
 		{
-			GetBonus (statptr);
-			continue;
+			if (!netgame)		// netgame: in the game logic (NetPickups)
+			{
+				GetBonus (statptr);
+				continue;
+			}
 		}
 
 		if (!visptr->viewheight)
@@ -1041,9 +1044,14 @@ void DrawScaleds (void)
 //
 // place active objects
 //
-	for (obj = player->next;obj;obj=obj->next)
+	for (obj = netgame ? playerobjs[0] : player->next;obj;obj=obj->next)
 	{
-		if (!(visptr->shapenum = obj->state->shapenum))
+		if (netgame && obj->obclass == playerobj)
+		{
+			if (obj == player || !(visptr->shapenum = NetPlayerShape (obj)))
+				continue;
+		}
+		else if (!(visptr->shapenum = obj->state->shapenum))
 			continue;						// no shape
 
 		spotloc = (obj->tilex<<6)+obj->tiley;	// optimize: keep in struct?
@@ -1063,7 +1071,8 @@ void DrawScaleds (void)
 		|| ( *(visspot+64) && !*(tilespot+64) )
 		|| ( *(visspot+63) && !*(tilespot+63) ) )
 		{
-			obj->active = true;
+			if (!netgame)
+				obj->active = true;
 			TransformActor (obj);
 			if (!obj->viewheight)
 				continue;						// too close or far away
@@ -1073,7 +1082,7 @@ void DrawScaleds (void)
 			if (visptr->shapenum == -1)
 				visptr->shapenum = obj->temp1;	// special shape
 
-			if (obj->state->rotate)
+			if (obj->state->rotate && obj->obclass != playerobj)
 				visptr->shapenum += CalcRotate (obj);
 
 			if (visptr < &vislist[MAXVISABLE-1])	// don't let it overflow
@@ -1132,6 +1141,9 @@ int	weaponscale[NUMWEAPONS] = {SPR_KNIFEREADY,SPR_PISTOLREADY
 void DrawPlayerWeapon (void)
 {
 	int	shapenum;
+
+	if (NetLocalDead ())
+		return;
 
 #ifndef SPEAR
 	if (gamestate.victoryflag)

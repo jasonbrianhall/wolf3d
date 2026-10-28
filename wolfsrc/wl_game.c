@@ -640,7 +640,7 @@ void SetupGameLevel (void)
 	 gamestate.treasurecount=0;
 	}
 
-	if (demoplayback || demorecord)
+	if (demoplayback || demorecord || netgame)
 		US_InitRndT (false);
 	else
 		US_InitRndT (true);
@@ -1263,6 +1263,8 @@ restart:
 			loadedgame = false;
 		else
 			SetupGameLevel ();
+		if (netgame)
+			NetLevelStart ();
 
 #ifdef SPEAR
 		if (gamestate.mapon == 20)	// give them the key allways
@@ -1308,11 +1310,16 @@ startplayloop:
 			SetupGameLevel ();
 			StartMusic ();
 			PM_CheckMainMem ();
-			player->x = spearx;
-			player->y = speary;
-			player->angle = spearangle;
+			if (netgame)
+				NetLevelStart ();		// everybody starts at the start
+			else
+			{
+				player->x = spearx;
+				player->y = speary;
+				player->angle = spearangle;
+				Thrust (0,0);
+			}
 			spearflag = false;
-			Thrust (0,0);
 			goto startplayloop;
 		}
 #endif

@@ -703,15 +703,31 @@ void MoveObj (objtype *ob, long move)
 //
 	if (areabyplayer[ob->areanumber])
 	{
-		deltax = ob->x - player->x;
-		if (deltax < -MINACTORDIST || deltax > MINACTORDIST)
-			goto moveok;
-		deltay = ob->y - player->y;
-		if (deltay < -MINACTORDIST || deltay > MINACTORDIST)
+		int		i;
+		objtype	*pl;
+
+		for (i=0;i<numplayers;i++)
+		{
+			pl = netgame ? playerobjs[i] : player;
+			if (netgame && !NetPlayerAlive (i))
+				continue;
+			deltax = ob->x - pl->x;
+			if (deltax < -MINACTORDIST || deltax > MINACTORDIST)
+				continue;
+			deltay = ob->y - pl->y;
+			if (deltay < -MINACTORDIST || deltay > MINACTORDIST)
+				continue;
+			break;
+		}
+		if (i == numplayers)
 			goto moveok;
 
 		if (ob->obclass == ghostobj || ob->obclass == spectreobj)
+		{
+			if (netgame)
+				NetSetContext (i);
 			TakeDamage (tics*2,ob);
+		}
 
 	//
 	// back up
