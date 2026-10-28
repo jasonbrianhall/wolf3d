@@ -3479,14 +3479,14 @@ void T_Shoot (objtype *ob)
 
 	if (thrustspeed >= RUNSPEED)
 	{
-		if (ob->flags&FL_VISABLE)
+		if (netgame ? NetCanSee (player,ob) : (ob->flags&FL_VISABLE))
 			hitchance = 160-dist*16;		// player can see to dodge
 		else
 			hitchance = 160-dist*8;
 	}
 	else
 	{
-		if (ob->flags&FL_VISABLE)
+		if (netgame ? NetCanSee (player,ob) : (ob->flags&FL_VISABLE))
 			hitchance = 256-dist*16;		// player can see to dodge
 		else
 			hitchance = 256-dist*8;
@@ -3786,6 +3786,12 @@ void	A_StartDeathCam (objtype *ob)
 	long    xmove,ymove;
 	long	dist;
 	int		temp,i;
+
+	if (netgame)				// no replay in co-op: straight to the victory
+	{
+		playstate = ex_victorious;
+		return;
+	}
 
 	FinishPaletteShifts ();
 

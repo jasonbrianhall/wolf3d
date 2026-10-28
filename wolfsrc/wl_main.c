@@ -1461,6 +1461,9 @@ void    DemoLoop (void)
 	long nsize;
 	memptr	nullblock;
 
+	if (netgame)
+		NetGameLoop ();
+
 //
 // check for launch from ted
 //
@@ -1654,6 +1657,8 @@ int main (void)
 	CheckForEpisodes();
 
 	Patch386 ();
+
+	NetStartup ();
 
 	InitGame ();
 

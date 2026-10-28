@@ -86,6 +86,13 @@ jobs:
                      Blaster; AdLib, PC speaker and Sound Source work too.
           Options:   nowait (skip the intros), nomouse, nojoys, noal, nosb,
                      as in the original.
+          Co-op:     IPX, 2 to 4 players. Everyone runs, with an IPX driver
+                     loaded (in DOSBox: ipx=true, then IPXNET STARTSERVER on
+                     one machine and IPXNET CONNECT <address> on the others):
+                       WOLF3D -nodes 2 [-episode 1] [-level 1] [-skill 2]
+                     Player 1's episode/level/skill are used. Dead players
+                     come back at the level start; keys are shared.
+                     Esc leaves the game.
 
           Version:   ${VERSION}
           Built from: ${GITHUB_REPOSITORY}@${GITHUB_SHA}

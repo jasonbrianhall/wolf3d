@@ -66,8 +66,11 @@ long DOS32_MemoryFree (void)
 =================
 */
 
+void NetShutdown (void);
+
 static void DOS32_Fault (int sig)
 {
+	NetShutdown ();
 	SD_EmergencyShutdown ();
 	IN_EmergencyShutdown ();
 	VL_SetTextMode ();

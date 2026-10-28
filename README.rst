@@ -30,6 +30,18 @@ before: mode X VGA, keyboard and timer interrupts, PC speaker, AdLib,
 Sound Blaster (``BLASTER=``) and Sound Source. ``CONFIG`` files are
 shared with the original; saved games are not.
 
+Co-op over IPX for 2 to 4 players: every player starts the game with
+an IPX driver loaded (DOSBox: ``ipx=true``, then ``IPXNET STARTSERVER``
+on one and ``IPXNET CONNECT <address>`` on the others)::
+
+  wolf3d -nodes 2 -episode 1 -level 1 -skill 2
+
+It's lockstep, like Doom: only the controls go over the network, so all
+machines run the same game. Player 1's episode, level and skill are
+used. A dead player comes back at the level start after three seconds;
+keys are shared. Esc leaves the game and the others play on. In Spear
+there's no BJ sprite, so the other players look like SS guards.
+
 Needs a 386 with a 387 (or a 486DX or later; else put ``EMU387.DXE``
 next to it) and 4 MB of RAM. Runs in plain DOS, FreeDOS, Windows 9x and
 DOSBox, not in Windows NT/XP's DOS box.

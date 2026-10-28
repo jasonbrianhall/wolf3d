@@ -307,16 +307,37 @@ void RecursiveConnect (int areanumber)
 
 void ConnectAreas (void)
 {
+	int	i;
+
 	memset (areabyplayer,0,sizeof(areabyplayer));
-	areabyplayer[player->areanumber] = true;
-	RecursiveConnect (player->areanumber);
+	if (!netgame)
+	{
+		areabyplayer[player->areanumber] = true;
+		RecursiveConnect (player->areanumber);
+		return;
+	}
+	for (i=0;i<numplayers;i++)		// areas any player is connected to
+		if (playerobjs[i]->obclass == playerobj && !areabyplayer[playerobjs[i]->areanumber])
+		{
+			areabyplayer[playerobjs[i]->areanumber] = true;
+			RecursiveConnect (playerobjs[i]->areanumber);
+		}
 }
 
 
 void InitAreas (void)
 {
+	int	i;
+
 	memset (areabyplayer,0,sizeof(areabyplayer));
-	areabyplayer[player->areanumber] = true;
+	if (!netgame)
+	{
+		areabyplayer[player->areanumber] = true;
+		return;
+	}
+	for (i=0;i<numplayers;i++)
+		if (playerobjs[i]->obclass == playerobj)
+			areabyplayer[playerobjs[i]->areanumber] = true;
 }
 
 
@@ -416,8 +437,8 @@ void OpenDoor (int door)
 
 void CloseDoor (int door)
 {
-	int	tilex,tiley,area;
-	objtype *check;
+	int	tilex,tiley,area,i;
+	objtype *check,*pl;
 
 //
 // don't close on anything solid
@@ -428,18 +449,35 @@ void CloseDoor (int door)
 	if (actorat[tilex][tiley])
 		return;
 
-	if (player->tilex == tilex && player->tiley == tiley)
-		return;
+	for (i=0;i<numplayers;i++)
+	{
+		pl = netgame ? playerobjs[i] : player;
+		if (pl->tilex == tilex && pl->tiley == tiley)
+			return;
+		if (doorobjlist[door].vertical)
+		{
+			if ( pl->tiley == tiley )
+			{
+				if ( ((pl->x+MINDIST) >>TILESHIFT) == tilex )
+					return;
+				if ( ((pl->x-MINDIST) >>TILESHIFT) == tilex )
+					return;
+			}
+		}
+		else
+		{
+			if (pl->tilex == tilex)
+			{
+				if ( ((pl->y+MINDIST) >>TILESHIFT) == tiley )
+					return;
+				if ( ((pl->y-MINDIST) >>TILESHIFT) == tiley )
+					return;
+			}
+		}
+	}
 
 	if (doorobjlist[door].vertical)
 	{
-		if ( player->tiley == tiley )
-		{
-			if ( ((player->x+MINDIST) >>TILESHIFT) == tilex )
-				return;
-			if ( ((player->x-MINDIST) >>TILESHIFT) == tilex )
-				return;
-		}
 		check = actorat[tilex-1][tiley];
 		if (check && ((check->x+MINDIST) >> TILESHIFT) == tilex )
 			return;
@@ -449,13 +487,6 @@ void CloseDoor (int door)
 	}
 	else if (!doorobjlist[door].vertical)
 	{
-		if (player->tilex == tilex)
-		{
-			if ( ((player->y+MINDIST) >>TILESHIFT) == tiley )
-				return;
-			if ( ((player->y-MINDIST) >>TILESHIFT) == tiley )
-				return;
-		}
 		check = actorat[tilex][tiley-1];
 		if (check && ((check->y+MINDIST) >> TILESHIFT) == tiley )
 			return;
@@ -616,7 +647,7 @@ void DoorOpening (int door)
 
 void DoorClosing (int door)
 {
-	int		area1,area2,move;
+	int		area1,area2,move,i;
 	word	*map;
 	long	position;
 	int		tilex,tiley;
@@ -630,6 +661,12 @@ void DoorClosing (int door)
 		OpenDoor (door);
 		return;
 	};
+	for (i=0;netgame && i<numplayers;i++)
+		if (playerobjs[i]->tilex == tilex && playerobjs[i]->tiley == tiley)
+		{
+			OpenDoor (door);
+			return;
+		}
 
 	position = doorposition[door];
 
@@ -720,6 +757,7 @@ unsigned	pwallstate;
 unsigned	pwallpos;			// amount a pushable wall has been moved (0-63)
 unsigned	pwallx,pwally;
 int			pwalldir;
+objtype		*pwallpusher;		// whose area it joins
 
 /*
 ===============
@@ -781,6 +819,7 @@ void PushWall (int checkx, int checky, int dir)
 	}
 
 	gamestate.secretcount++;
+	pwallpusher = player;
 	pwallx = checkx;
 	pwally = checky;
 	pwalldir = dir;
@@ -823,7 +862,7 @@ void MovePWalls (void)
 		//
 		tilemap[pwallx][pwally] = 0;
 		actorat[pwallx][pwally] = (objtype *)(0);
-		*(mapsegs[0]+farmapylookup[pwally]+pwallx) = player->areanumber+AREATILE;
+		*(mapsegs[0]+farmapylookup[pwally]+pwallx) = (netgame ? pwallpusher : player)->areanumber+AREATILE;
 
 		//
 		// see if it should be pushed farther

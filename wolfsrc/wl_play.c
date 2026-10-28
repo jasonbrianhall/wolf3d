@@ -895,8 +895,12 @@ void InitActorList (void)
 //
 // give the player the first free spots
 //
-	GetNewActor ();
-	player = new;
+	for (i=0;i<numplayers;i++)
+	{
+		GetNewActor ();
+		playerobjs[i] = new;
+	}
+	player = playerobjs[0];
 
 }
 
@@ -1141,6 +1145,8 @@ void ClearPaletteShifts (void)
 
 void StartBonusFlash (void)
 {
+	if (!NetIsLocal ())
+		return;
 	bonuscount = NUMWHITESHIFTS*WHITETICS;		// white shift palette
 }
 
@@ -1155,6 +1161,8 @@ void StartBonusFlash (void)
 
 void StartDamageFlash (int damage)
 {
+	if (!NetIsLocal ())
+		return;
 	damagecount += damage;
 }
 
@@ -1259,6 +1267,9 @@ void FinishPaletteShifts (void)
 void DoActor (objtype *ob)
 {
 	void (*think)(objtype *);
+
+	if (netgame && areabyplayer[ob->areanumber])
+		ob->active = true;		// instead of when the local view sees it
 
 	if (!ob->active && !areabyplayer[ob->areanumber])
 		return;
@@ -1368,6 +1379,12 @@ void PlayLoop (void)
 {
 	int		give;
 	int	helmetangle;
+
+	if (netgame)
+	{
+		NetPlayLoop ();
+		return;
+	}
 
 	playstate = TimeCount = lasttimecount = 0;
 	frameon = 0;
