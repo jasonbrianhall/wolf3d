@@ -121,6 +121,174 @@ static void CfgWriteArray (int file, int *array, int count)
 /*
 ====================
 =
+= ArgValue / ArgIs
+=
+= Settings from the command line: -music off, /music=off and music:off
+= all work
+=
+====================
+*/
+
+static char *ArgValue (char *name)
+{
+	int		i,len;
+	char	*a;
+
+	len = strlen (name);
+	for (i=1;i<_argc;i++)
+	{
+		a = _argv[i];
+		while (*a == '-' || *a == '/')
+			a++;
+		if (strnicmp (a,name,len))
+			continue;
+		a += len;
+		if (*a == '=' || *a == ':')
+			return a+1;
+		if (!*a && i+1 < _argc)
+			return _argv[i+1];
+	}
+	return NULL;
+}
+
+static boolean ArgPresent (char *name)
+{
+	int		i;
+	char	*a;
+
+	for (i=1;i<_argc;i++)
+	{
+		a = _argv[i];
+		while (*a == '-' || *a == '/')
+			a++;
+		if (!stricmp (a,name))
+			return true;
+	}
+	return false;
+}
+
+static boolean ArgIs (char *value, char *word)
+{
+	return value && !stricmp (value,word);
+}
+
+
+/*
+====================
+=
+= ShowHelp
+=
+= /? -? -h --help
+=
+====================
+*/
+
+static void ShowHelp (void)
+{
+	int		i;
+	char	*a;
+
+	for (i=1;i<_argc;i++)
+	{
+		a = _argv[i];
+		if (!strcmp (a,"/?") || !strcmp (a,"-?") || !stricmp (a,"/h")
+		|| !stricmp (a,"-h") || !stricmp (a,"-help") || !stricmp (a,"--help"))
+			break;
+	}
+	if (i == _argc)
+		return;
+
+	printf (
+"Usage: %s [options]\n"
+"\n"
+"Settings (saved to the CONFIG file when you quit):\n"
+"  -sfx off|pc|adlib        sound effects\n"
+"  -music off|adlib         music\n"
+"  -digi off|sb|ss          digitized sound (Sound Blaster, Sound Source)\n"
+"  -mouse on|off            -joystick off|1|2\n"
+"  -sensitivity 0-9         mouse sensitivity\n"
+"  -viewsize 4-20           size of the 3D view\n"
+"  -defaults                ignore the CONFIG file (detect the hardware)\n"
+"\n"
+"Hardware (as in the original):\n"
+"  nowait                   skip the intro screens\n"
+"  noal nosb nopro noss     don't use AdLib / Sound Blaster / SB Pro mixer /\n"
+"                           Sound Source\n"
+"  sst ss1 ss2 ss3          Sound Source: Tandy / LPT1-3\n"
+"  nomouse nojoys           don't use the mouse / joysticks\n"
+"  Sound Blaster settings come from BLASTER= (e.g. A220 I5 D1)\n"
+"\n"
+"Co-op over IPX:\n"
+"  -nodes 2-4 [-episode N] [-level N] [-skill 0-3] [-netlog]\n",
+		_argv[0]);
+	exit (0);
+}
+
+
+/*
+====================
+=
+= CommandLineConfig
+=
+= -sfx, -music... override what CONFIG or the hardware check said
+=
+====================
+*/
+
+static void CommandLineConfig (SDMode *sd, SMMode *sm, SDSMode *sds)
+{
+	char	*v;
+
+	v = ArgValue ("sfx");
+	if (ArgIs (v,"off"))
+		*sd = sdm_Off;
+	else if (ArgIs (v,"pc"))
+		*sd = sdm_PC;
+	else if (ArgIs (v,"adlib") && (AdLibPresent || SoundBlasterPresent))
+		*sd = sdm_AdLib;
+
+	v = ArgValue ("music");
+	if (ArgIs (v,"off"))
+		*sm = smm_Off;
+	else if (ArgIs (v,"adlib") && (AdLibPresent || SoundBlasterPresent))
+		*sm = smm_AdLib;
+
+	v = ArgValue ("digi");
+	if (ArgIs (v,"off"))
+		*sds = sds_Off;
+	else if (ArgIs (v,"sb") && SoundBlasterPresent)
+		*sds = sds_SoundBlaster;
+	else if (ArgIs (v,"ss") && SoundSourcePresent)
+		*sds = sds_SoundSource;
+
+	v = ArgValue ("mouse");
+	if (ArgIs (v,"off"))
+		mouseenabled = false;
+	else if (ArgIs (v,"on") && MousePresent)
+		mouseenabled = true;
+
+	v = ArgValue ("joystick");
+	if (ArgIs (v,"off"))
+		joystickenabled = false;
+	else if ((ArgIs (v,"1") || ArgIs (v,"2")) && JoysPresent[*v-'1'])
+	{
+		joystickenabled = true;
+		joystickport = *v-'1';
+	}
+
+	v = ArgValue ("sensitivity");
+	if (v && atoi (v) >= 0 && atoi (v) <= 9)
+		mouseadjustment = atoi (v);
+
+	v = ArgValue ("viewsize");
+	if (v && atoi (v) >= 4 && atoi (v) <= 20)
+		viewsize = atoi (v);
+}
+
+
+/*
+====================
+=
 = ReadConfig
 =
 ====================
@@ -134,7 +302,7 @@ void ReadConfig(void)
 	SDSMode         sds;
 
 
-	if ( (file = open(configname,O_BINARY | O_RDONLY)) != -1)
+	if ( !ArgPresent ("defaults") && (file = open(configname,O_BINARY | O_RDONLY)) != -1)
 	{
 	//
 	// valid config file
@@ -176,10 +344,9 @@ void ReadConfig(void)
 			mouseadjustment = 5;
 
 		if (sd == sdm_AdLib && !AdLibPresent && !SoundBlasterPresent)
-		{
 			sd = sdm_PC;
-			sd = smm_Off;
-		}
+		if (sm == smm_AdLib && !AdLibPresent && !SoundBlasterPresent)
+			sm = smm_Off;		// id's code set sd twice here
 
 		if ((sds == sds_SoundBlaster && !SoundBlasterPresent) ||
 			(sds == sds_SoundSource && !SoundSourcePresent))
@@ -227,6 +394,8 @@ void ReadConfig(void)
 		viewsize = 15;
 		mouseadjustment=5;
 	}
+
+	CommandLineConfig (&sd,&sm,&sds);
 
 	SD_SetMusicMode (sm);
 	SD_SetSoundMode (sd);
@@ -1637,6 +1806,7 @@ int main (void)
 	int     i;
 
 	DOS32_Startup ();
+	ShowHelp ();
 
 
 #ifdef BETA
