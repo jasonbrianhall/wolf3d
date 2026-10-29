@@ -39,8 +39,10 @@ on one and ``IPXNET CONNECT <address>`` on the others)::
 It's lockstep, like Doom: only the controls go over the network, so all
 machines run the same game. Player 1's episode, level and skill are
 used. A dead player comes back at the level start after three seconds;
-keys are shared. Esc leaves the game and the others play on. In Spear
-there's no BJ sprite, so the other players look like SS guards.
+keys are shared. Players block each other like actors do, and can shoot
+each other (``-nofriendlyfire`` turns that off; player 1's choice is
+used). The other players are drawn with the SS sprites, recolored green,
+red, gold and white. Esc leaves the game and the others play on.
 
 ``wolf3d /?`` lists the options. Sound and control settings can be set
 from the command line (``-sfx``, ``-music``, ``-digi``, ``-mouse``,

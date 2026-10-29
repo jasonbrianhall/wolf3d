@@ -94,6 +94,7 @@ jobs:
                        WOLF3D -nodes 2 [-episode 1] [-level 1] [-skill 2]
                      Player 1's episode/level/skill are used. Dead players
                      come back at the level start; keys are shared.
+                     Friendly fire is on unless -nofriendlyfire.
                      Esc leaves the game.
 
           Version:   ${VERSION}

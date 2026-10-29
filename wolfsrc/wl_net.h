@@ -27,5 +27,12 @@ boolean	NetLocalDead (void);
 objtype	*NetFindTarget (objtype *shooter, boolean knife, long *dist);
 boolean	NetCanSee (objtype *viewer, objtype *ob);
 int		NetPlayerShape (objtype *ob);
+memptr	NetShape (int shapenum);
+void	NetDamagePlayer (objtype *target, int damage, objtype *attacker);
+void	NetPlayerHurt (void);
+boolean	NetPlayerBlocked (objtype *ob);
+extern	long	netoldx,netoldy;
+
+#define NETSHAPEFLAG	0x4000		// shapenum of a recolored player sprite
 
 #endif

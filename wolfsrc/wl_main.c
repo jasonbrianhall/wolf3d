@@ -219,7 +219,8 @@ static void ShowHelp (void)
 "  Sound Blaster settings come from BLASTER= (e.g. A220 I5 D1)\n"
 "\n"
 "Co-op over IPX:\n"
-"  -nodes 2-4 [-episode N] [-level N] [-skill 0-3] [-netlog]\n",
+"  -nodes 2-4 [-episode N] [-level N] [-skill 0-3] [-nofriendlyfire]\n"
+"            [-netlog]\n",
 		_argv[0]);
 	exit (0);
 }
