@@ -145,10 +145,56 @@ static void LoadConfig (void)
 	if (cfg.joystickport < 0 || cfg.joystickport > 1) cfg.joystickport = 0;
 }
 
+/* chat macros for co-op (Alt+1..Alt+0 while typing a message), CHATMACS.CFG */
+#define MACROLEN	60
+static char		macros[10][MACROLEN+1] =
+{
+	"Need ammo!","Need health!","Follow me!","Wait for me!","I've got the key.",
+	"Found the exit!","Watch out, guards!","There's a secret here.","Yes.","No.",
+};
+static int		macrosdirty;
+
+static void LoadMacros (void)
+{
+	FILE	*f = fopen ("CHATMACS.CFG","r");
+	char	line[128];
+	int		i,l;
+
+	if (!f)
+		return;
+	for (i=0;i<10 && fgets (line,sizeof(line),f);i++)
+	{
+		l = strlen (line);
+		while (l && (line[l-1] == '\n' || line[l-1] == '\r'))
+			line[--l] = 0;
+		strncpy (macros[i],line,MACROLEN);
+		macros[i][MACROLEN] = 0;
+	}
+	fclose (f);
+}
+
+static void SaveMacros (void)
+{
+	FILE	*f;
+	int		i;
+
+	if (!macrosdirty)
+		return;
+	f = fopen ("CHATMACS.CFG","w");
+	if (!f)
+		return;
+	for (i=0;i<10;i++)
+		fprintf (f,"%s\n",macros[i]);
+	fclose (f);
+	macrosdirty = 0;
+}
+
 static int SaveConfig (void)
 {
-	FILE *f = fopen (cfgname,"wb");
+	FILE *f;
 
+	SaveMacros ();
+	f = fopen (cfgname,"wb");
 	if (!f)
 		return 0;
 	fwrite (&cfg,1,sizeof(cfg),f);
@@ -375,7 +421,7 @@ static const char *KeyName (int scan)
 /* ------------------------------------------------------------------ */
 /* forms: a list of fields, Up/Down to pick, Left/Right to change      */
 
-enum {F_CHOICE,F_NUMBER,F_KEY,F_ACTION,F_TEXT};
+enum {F_CHOICE,F_NUMBER,F_KEY,F_ACTION,F_TEXT,F_STRING};
 
 typedef struct
 {
@@ -386,6 +432,7 @@ typedef struct
 	const char	**choices;
 	int			action;			// F_ACTION: returned by Form
 	int			*ivalue;		// instead of value
+	char		*str;			// F_STRING (max MACROLEN)
 } field_t;
 
 static int GetValue (field_t *f)
@@ -420,6 +467,9 @@ static void ValueText (field_t *f, char *out)
 	case F_KEY:
 		strcpy (out,KeyName (GetValue (f)));
 		break;
+	case F_STRING:
+		sprintf (out,"%.38s",f->str);
+		break;
 	default:
 		out[0] = 0;
 	}
@@ -450,6 +500,9 @@ static int Form (const char *title, field_t *fields, int count, int *cursor,
 	}
 	if (vw < 14)
 		vw = 14;
+	for (i=0;i<count;i++)
+		if (fields[i].type == F_STRING)
+			vw = 40;
 	w = lw + vw + 9;
 	if (w < (int)strlen (title)+8)
 		w = strlen (title)+8;
@@ -525,7 +578,43 @@ static int Form (const char *title, field_t *fields, int count, int *cursor,
 				*cursor = sel;
 				return f->action;
 			}
-			if (f->type == F_KEY)
+			if (f->type == F_STRING)
+			{
+				char	buf[MACROLEN+1];
+				int		len,k,c;
+
+				strcpy (buf,f->str);
+				len = strlen (buf);
+				for (;;)
+				{
+					sprintf (line," %-*s  %-*.*s ",lw,f->label,vw,vw,
+						len > vw-1 ? buf+len-(vw-1) : buf);
+					Put (x+2,y+2+sel,line,0x1e);
+					k = len > vw-1 ? vw-1 : len;
+					Put (x+5+lw+k,y+2+sel,"_",0x1e);
+					k = GetKey ();
+					c = k & 0xff;
+					if ((k >> 8) == K_ESC)
+						break;
+					if ((k >> 8) == K_ENTER || (k >> 8) == 0x9c)
+					{
+						strcpy (f->str,buf);
+						macrosdirty = dirty = 1;
+						break;
+					}
+					if ((k >> 8) == 0x0e)		// backspace
+					{
+						if (len)
+							buf[--len] = 0;
+					}
+					else if (c >= ' ' && c < 127 && len < MACROLEN)
+					{
+						buf[len++] = c;
+						buf[len] = 0;
+					}
+				}
+			}
+			else if (f->type == F_KEY)
 			{
 				int k,j;
 				Box (x+w/2-16,y+h/2-1,32,3,0x4f,NULL);
@@ -645,6 +734,25 @@ static void MouseScreen (void)
 	cfg.joystickenabled = joy != 0;
 	if (joy)
 		cfg.joystickport = joy-1;
+}
+
+static void MacroScreen (void)
+{
+	static int cursor;
+	static const char *labels[10] =
+		{"Alt+1","Alt+2","Alt+3","Alt+4","Alt+5","Alt+6","Alt+7","Alt+8","Alt+9","Alt+0"};
+	field_t	f[10];
+	int		i;
+
+	memset (f,0,sizeof(f));
+	for (i=0;i<10;i++)
+	{
+		f[i].type = F_STRING;
+		f[i].label = labels[i];
+		f[i].str = macros[i];
+	}
+	while (Form ("Chat macros",f,10,&cursor,"In co-op: T, then Alt+number. Enter edits.") != -1)
+		;
 }
 
 static void DisplayScreen (void)
@@ -777,6 +885,7 @@ static void MainScreen (void)
 		{F_ACTION,"Keyboard",0,0,0,0,2},
 		{F_ACTION,"Mouse and joystick",0,0,0,0,3},
 		{F_ACTION,"Display",0,0,0,0,4},
+		{F_ACTION,"Chat macros",0,0,0,0,9},
 		{F_ACTION,"Network game (IPX co-op)",0,0,0,0,5},
 		{F_TEXT,""},
 		{F_ACTION,"Save settings and run the game",0,0,0,0,6},
@@ -786,13 +895,14 @@ static void MainScreen (void)
 
 	for (;;)
 	{
-		act = Form ("Main menu",f,9,&cursor,haveconfig ? NULL : "No CONFIG yet: these are the defaults.");
+		act = Form ("Main menu",f,10,&cursor,haveconfig ? NULL : "No CONFIG yet: these are the defaults.");
 		switch (act)
 		{
 		case 1: SoundScreen (); break;
 		case 2: KeyboardScreen (); break;
 		case 3: MouseScreen (); break;
 		case 4: DisplayScreen (); break;
+		case 9: MacroScreen (); break;
 		case 5: NetworkScreen (0); break;
 		case 6:
 			SaveConfig ();
@@ -828,6 +938,7 @@ int main (int argc, char **argv)
 	FindGame ();
 	LoadConfig ();
 	LoadNet ();
+	LoadMacros ();
 
 	for (i=1;i<argc;i++)
 		if (!strcmp (argv[i],"/?") || !strcmp (argv[i],"-?") || !stricmp (argv[i],"-h")

@@ -50,6 +50,9 @@ keys are shared. Players block each other like actors do, and can shoot
 each other (``-nofriendlyfire`` turns that off; player 1's choice is
 used). The other players are drawn with the SS sprites, recolored green,
 red, gold and white. Esc leaves the game and the others play on.
+T starts a chat message (Enter sends, Esc drops it); while typing,
+Alt+1 to Alt+0 send the chat macros, which SETUP edits
+(``CHATMACS.CFG``).
 
 Tab shows an automap like Doom's (Tab again: the map over the 3D view,
 again: off; ``+`` / ``-`` zoom). It draws the walls around floor you've
