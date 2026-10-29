@@ -1580,6 +1580,8 @@ void	ThreeDRefresh (void)
 
 	if (automapmode)
 		AM_Draw ();
+	if (netgame)
+		NetDrawChat ();		// co-op messages
 
 //
 // show screen and time last cycle

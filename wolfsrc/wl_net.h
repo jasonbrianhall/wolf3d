@@ -30,6 +30,8 @@ int		NetPlayerShape (objtype *ob);
 memptr	NetShape (int shapenum);
 void	NetDamagePlayer (objtype *target, int damage, objtype *attacker);
 void	NetPlayerHurt (void);
+void	NetDrawChat (void);
+boolean	NetChatting (void);
 boolean	NetPlayerBlocked (objtype *ob);
 extern	long	netoldx,netoldy;
 

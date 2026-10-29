@@ -106,7 +106,8 @@ jobs:
                      Player 1's episode/level/skill are used. Dead players
                      come back at the level start; keys are shared.
                      Friendly fire is on unless -nofriendlyfire.
-                     Esc leaves the game.
+                     Esc leaves the game. T: chat (Enter sends); while
+                     typing, Alt+1..Alt+0 send the macros SETUP edits.
 
           Version:   ${VERSION}
           Built from: ${GITHUB_REPOSITORY}@${GITHUB_SHA}

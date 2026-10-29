@@ -109,6 +109,7 @@ typedef struct
 static	netplayer_t	np[MAXPLAYERS];
 static	int		hello_ff;			// friendly fire (player 1's choice)
 static	boolean	SpawnSpotClear (netplayer_t *p);
+static	void	AddChatLine (char *text, int color);
 
 /*
 =============================================================================
@@ -399,6 +400,11 @@ void NetKillPlayer (objtype *attacker)
 	gamestate.attackframe = gamestate.weaponframe = 0;
 	if (netcontext == localplayer)
 		SD_PlaySound (PLAYERDEATHSND);
+	{
+		char str[40];
+		sprintf (str,"Player %d died",netcontext+1);
+		AddChatLine (str,7);
+	}
 }
 
 static void Respawn (netplayer_t *p)
@@ -957,7 +963,7 @@ static int IPXGet (void *buf, byte *from)
 =============================================================================
 */
 
-enum {pk_hello=1,pk_tics,pk_quit};
+enum {pk_hello=1,pk_tics,pk_quit,pk_chat};
 
 #define NETVERSION	2
 
@@ -1046,11 +1052,267 @@ static void SendHello (byte *to)
 	IPXSend (0,to,&pk,sizeof(pk));
 }
 
+/*
+=============================================================================
+
+						 CHAT
+
+T starts a message, Enter sends it to everyone, Esc drops it; while
+typing, Alt+1..Alt+0 send the macros from CHATMACS.CFG (SETUP edits
+them). Messages show at the top of the view for a few seconds. Chat
+doesn't touch the game, so it's sent on its own, twice, not in lockstep.
+
+=============================================================================
+*/
+
+#define CHATLEN		60
+#define NUMLINES	4
+#define LINETICS	(70*6)
+
+typedef struct
+{
+	byte	magic[2];
+	byte	type,player;
+	byte	msgid,len,pad[2];
+	char	text[CHATLEN+1];
+} __attribute__((packed)) chatpacket_t;
+
+static	boolean	chatting;
+static	char	chatbuf[CHATLEN+1];
+static	int		chatlen;
+static	byte	chatid,lastchatid[MAXPLAYERS];
+static	boolean	gotchatid[MAXPLAYERS];
+
+static	char	chatlines[NUMLINES][CHATLEN+24];
+static	int		chatcolor[NUMLINES];
+static	long	chattime[NUMLINES];
+static	long	chatclock;
+
+char	chatmacros[10][CHATLEN+1] =
+{
+	"Need ammo!",
+	"Need health!",
+	"Follow me!",
+	"Wait for me!",
+	"I've got the key.",
+	"Found the exit!",
+	"Watch out, guards!",
+	"There's a secret here.",
+	"Yes.",
+	"No.",
+};
+
+static	int		playercolors[MAXPLAYERS] = {10,12,14,15};	// as their uniforms
+
+static void LoadMacros (void)
+{
+	FILE	*f;
+	char	line[128];
+	int		i,l;
+
+	f = fopen ("CHATMACS.CFG","r");
+	if (!f)
+		return;
+	for (i=0;i<10 && fgets (line,sizeof(line),f);i++)
+	{
+		l = strlen (line);
+		while (l && (line[l-1] == '\n' || line[l-1] == '\r'))
+			line[--l] = 0;
+		strncpy (chatmacros[i],line,CHATLEN);
+		chatmacros[i][CHATLEN] = 0;
+	}
+	fclose (f);
+}
+
+static void AddChatLine (char *text, int color)
+{
+	int i;
+
+	for (i=0;i<NUMLINES-1;i++)
+	{
+		strcpy (chatlines[i],chatlines[i+1]);
+		chatcolor[i] = chatcolor[i+1];
+		chattime[i] = chattime[i+1];
+	}
+	strncpy (chatlines[NUMLINES-1],text,sizeof(chatlines[0])-1);
+	chatlines[NUMLINES-1][sizeof(chatlines[0])-1] = 0;
+	chatcolor[NUMLINES-1] = color;
+	chattime[NUMLINES-1] = chatclock + LINETICS;
+}
+
+static void ChatMessage (int player, char *text)
+{
+	char line[CHATLEN+24];
+
+	sprintf (line,"Player %d: %s",player+1,text);
+	AddChatLine (line,playercolors[player]);
+}
+
+static void SendChat (char *text)
+{
+	chatpacket_t pk;
+	int		i,len;
+
+	if (!*text)
+		return;
+	ChatMessage (localplayer,text);
+
+	memset (&pk,0,sizeof(pk));
+	pk.magic[0] = 'W'; pk.magic[1] = '3';
+	pk.type = pk_chat;
+	pk.player = localplayer;
+	pk.msgid = ++chatid;
+	strncpy (pk.text,text,CHATLEN);
+	pk.len = len = strlen (pk.text);
+	for (i=0;i<numplayers;i++)
+		if (i != localplayer && !np[i].gone)
+		{
+			IPXSend (i,np[i].addr,&pk,sizeof(pk)-sizeof(pk.text)+len+1);
+			IPXSend (i,np[i].addr,&pk,sizeof(pk)-sizeof(pk.text)+len+1);
+		}
+}
+
+static void ReceiveChat (byte *buf, int len)
+{
+	chatpacket_t *pk = (chatpacket_t *)buf;
+
+	if (len < sizeof(chatpacket_t)-sizeof(pk->text)+1 || pk->player >= numplayers
+	|| pk->player == localplayer || pk->len > CHATLEN)
+		return;
+	if (gotchatid[pk->player] && lastchatid[pk->player] == pk->msgid)
+		return;					// the second copy
+	gotchatid[pk->player] = true;
+	lastchatid[pk->player] = pk->msgid;
+	pk->text[pk->len] = 0;
+	ChatMessage (pk->player,pk->text);
+	SD_PlaySound (MOVEGUN2SND);		// the menu's click
+}
+
+//
+// ChatKeys: from NetCheckKeys; true while the keys are the chat's
+//
+static boolean ChatKeys (void)
+{
+	int		scan,ch;
+
+	if (!chatting)
+	{
+		if (LastScan != sc_T || numplayers < 2)
+			return false;
+		chatting = true;
+		chatlen = 0;
+		chatbuf[0] = 0;
+		LastScan = sc_None;
+		LastASCII = 0;
+		return true;
+	}
+
+	scan = LastScan;
+	ch = LastASCII;
+	LastScan = sc_None;
+	LastASCII = 0;
+
+	if (scan == sc_Escape)
+		chatting = false;
+	else if (scan == sc_Return)
+	{
+		SendChat (chatbuf);
+		chatting = false;
+	}
+	else if (scan == sc_BackSpace)
+	{
+		if (chatlen)
+			chatbuf[--chatlen] = 0;
+	}
+	else if (Keyboard[sc_Alt] && scan >= sc_1 && scan <= sc_0)
+	{
+		SendChat (chatmacros[scan-sc_1]);
+		chatting = false;
+	}
+	else if (ch >= ' ' && ch < 127 && chatlen < CHATLEN)
+	{
+		chatbuf[chatlen++] = ch;
+		chatbuf[chatlen] = 0;
+	}
+	return true;
+}
+
+static void DrawText (int x, int y, char *text, int color)
+{
+	char	str[CHATLEN+30];
+	word	w,h;
+	int		l;
+
+	strncpy (str,text,sizeof(str)-1);
+	str[sizeof(str)-1] = 0;
+	l = strlen (str);
+	for (;;)					// it doesn't clip: shorten it to fit
+	{
+		VW_MeasurePropString (str,&w,&h);
+		if (x+w+1 < viewwidth || !l)
+			break;
+		str[--l] = 0;
+	}
+	SETFONTCOLOR(0,0);
+	px = x+1;
+	py = y+1;
+	VW_DrawPropString (str);
+	SETFONTCOLOR(color,0);
+	px = x;
+	py = y;
+	VW_DrawPropString (str);
+}
+
+/*
+===================
+=
+= NetDrawChat
+=
+= From ThreeDRefresh, with bufferofs at the view's corner
+=
+===================
+*/
+
+void NetDrawChat (void)
+{
+	int		i,y,oldfont;
+	char	line[CHATLEN+8];
+
+	chatclock += tics;
+	CA_CacheGrChunk (STARTFONT);
+	oldfont = fontnumber;
+	fontnumber = 0;
+
+	y = 2;
+	for (i=0;i<NUMLINES;i++)
+		if (chatlines[i][0] && chattime[i] > chatclock)
+		{
+			DrawText (4,y,chatlines[i],chatcolor[i]);
+			y += 10;
+		}
+	if (chatting)
+	{
+		sprintf (line,"Say: %s_",chatbuf);
+		DrawText (4,y,line,15);
+	}
+
+	fontnumber = oldfont;
+}
+
+boolean NetChatting (void)
+{
+	return chatting;
+}
+
 static void PlayerLeft (int p, long lastframe)
 {
+	char str[40];
+
 	if (np[p].gone)
 		return;
 	np[p].gone = true;
+	sprintf (str,"Player %d left the game",p+1);
+	AddChatLine (str,7);
 	np[p].lastframe = lastframe;
 }
 
@@ -1072,6 +1334,12 @@ static void NetReceive (void)
 	{
 		if (len < 4 || buf[0] != 'W' || buf[1] != '3')
 			continue;
+
+		if (buf[2] == pk_chat)
+		{
+			ReceiveChat (buf,len);
+			continue;
+		}
 
 		if (buf[2] == pk_hello)
 		{
@@ -1188,6 +1456,7 @@ void NetStartup (void)
 		if (!stricmp (_argv[i],"-netlog"))
 			netlog = fopen ("NETLOG.TXT","w");
 	NoWait = true;
+	LoadMacros ();
 
 	if (nodes == 1)
 	{
@@ -1531,6 +1800,8 @@ static void SampleControls (netcmd_t *cmd)
 	cmd->buttons = bits;
 	cmd->x = controlx;
 	cmd->y = controly;
+	if (chatting)					// the keys are for the message
+		memset (cmd,0,sizeof(*cmd));
 
 	controlx = savex;
 	controly = savey;
@@ -1764,6 +2035,9 @@ static void NetCheckKeys (void)
 		Paused = false;
 
 	if (screenfaded)
+		return;
+
+	if (ChatKeys ())
 		return;
 
 	if (AM_Keys (LastScan))
