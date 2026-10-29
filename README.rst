@@ -56,6 +56,15 @@ T starts a chat message (Enter sends, Esc drops it); while typing,
 Alt+1 to Alt+0 send the chat macros, which SETUP edits
 (``CHATMACS.CFG``).
 
+``-widescreen`` (or Widescreen in SETUP's Display screen) is for 16:9
+monitors: the game draws its pages in main memory instead of planar VGA
+memory and shows them in a 16:9 (or 16:10) VESA mode, 8 bit or 15/16/24/32
+bit, linear framebuffer or banked. The 3D view gets wider (432 pixels
+instead of 320 at view size 20, the same height, more angle); the status
+bar, menus and full screen pictures stay 320 wide in the middle, with
+black or matching sides. ``-vesa 848x480`` picks the mode, ``-vesabits``
+its depth. Without a wide VESA mode it stays in the normal VGA mode.
+
 Tab shows an automap like Doom's (Tab again: the map over the 3D view,
 again: off; ``+`` / ``-`` zoom). It draws the walls around floor you've
 seen, doors, the elevator and the players.

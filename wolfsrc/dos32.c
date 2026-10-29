@@ -59,6 +59,11 @@ void DOS32_WriteMarks (void)
 	fprintf (f,"Seconds since main() started:\n");
 	for (i=0;i<nummarks;i++)
 		fprintf (f,"%7.2f  %s\n",(marktimes[i]-marktimes[0])/18.2065,marknames[i]);
+	{
+		extern char vesamessage[];
+		if (vesamessage[0])
+			fprintf (f,"%s\n",vesamessage);
+	}
 	fclose (f);
 	nummarks = 0;
 }

@@ -1213,7 +1213,18 @@ void CA_CacheScreen (int chunk)
 // allocate final space, decompress it, and free bigbuffer
 // Sprites need to have shifts made and various other junk
 //
-	CAL_HuffExpand (source,VGAPTR(bufferofs),expanded,grhuffman,true);
+	if (vlinear)
+	{
+		// widescreen: unpack it (planar order), then draw it
+		byte *pic = malloc (expanded);
+		if (!pic)
+			Quit ("CA_CacheScreen: out of memory");
+		CAL_HuffExpand (source,pic,expanded,grhuffman,false);
+		VL_MemToScreen (pic,320,200,0,0);
+		free (pic);
+	}
+	else
+		CAL_HuffExpand (source,VGAPTR(bufferofs),expanded,grhuffman,true);
 	VW_MarkUpdateBlock (0,0,319,199);
 	MM_FreePtr(&bigbufferseg);
 }

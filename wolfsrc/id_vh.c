@@ -2,7 +2,6 @@
 
 #include "id_heads.h"
 
-#define	SCREENWIDTH		80
 #define CHARWIDTH		2
 #define TILEWIDTH		4
 #define GRPLANES		4
@@ -48,6 +47,28 @@ void VW_DrawPropString (char *string)
 	height = bufferheight = font->height;
 	dest = origdest = VGAPTR(bufferofs+ylookup[py]+(px>>2));
 	mask = 1<<(px&3);
+	if (vlinear)
+	{
+		byte	*d;
+		int		x0 = px;
+		while ((ch = *string++)!=0)
+		{
+			width = step = font->width[ch];
+			source = ((byte *)font)+font->location[ch];
+			while (width--)
+			{
+				d = VL_UIPixel (px,py);
+				for (i=0,s=source;i<height;i++,s+=step,d+=scrwidth)
+					if (*s)
+						*d = fontcolor;
+				source++;
+				px++;
+			}
+		}
+		bufferheight = height;
+		bufferwidth = px-x0;
+		return;
+	}
 
 
 	while ((ch = *string++)!=0)
@@ -90,6 +111,33 @@ void VW_DrawColorPropString (char *string)
 	height = bufferheight = font->height;
 	dest = origdest = VGAPTR(bufferofs+ylookup[py]+(px>>2));
 	mask = 1<<(px&3);
+	if (vlinear)
+	{
+		byte	*d;
+		int		x0 = px;
+		while ((ch = *string++)!=0)
+		{
+			width = step = font->width[ch];
+			source = ((byte *)font)+font->location[ch];
+			while (width--)
+			{
+				d = VL_UIPixel (px,py);
+				color = fontcolor;
+				for (i=height,s=source;i;i--,s+=step,d+=scrwidth)
+				{
+					if (*s)
+						*d = color;
+					if (!(i&1))
+						color++;
+				}
+				source++;
+				px++;
+			}
+		}
+		bufferheight = height;
+		bufferwidth = px-x0;
+		return;
+	}
 
 
 	while ((ch = *string++)!=0)
@@ -336,6 +384,24 @@ void VH_UpdateScreen (void)
 	int		tile,line;
 	volatile byte	*src,*dest;
 
+	if (vlinear)
+	{
+		byte	*s,*d;
+		for (tile=UPDATEWIDE*UPDATEHIGH-1;tile>=0;tile--)
+		{
+			if (!(((byte *)update)[tile]&1))
+				continue;
+			((byte *)update)[tile] = 0;
+			s = VL_Linear (bufferofs+blockstarts[tile]);
+			d = VL_Linear (displayofs+blockstarts[tile]);
+			if (s != d)
+				for (line=0;line<16;line++,s+=scrwidth,d+=scrwidth)
+					memcpy (d,s,16);
+		}
+		VL_PresentDirty ();
+		return;
+	}
+
 	VGAMAPMASK(15);
 	VGAWRITEMODE(1);
 
@@ -517,6 +583,13 @@ boolean FizzleFade (unsigned source, unsigned dest,
 
 			if (x>width || y>height)
 				continue;
+			if (vlinear)
+			{
+				*(VL_Linear (dest+ylookup[y])+x) = *(VL_Linear (source+ylookup[y])+x);
+				if (rndval == 1)
+					return false;
+				continue;
+			}
 			drawofs = source+ylookup[y] + (x>>2);
 
 			//
@@ -533,6 +606,7 @@ boolean FizzleFade (unsigned source, unsigned dest,
 				return false;
 		}
 		frame++;
+		VL_PresentDirty ();
 		while (TimeCount<frame)		// don't go too fast
 		;
 	} while (1);

@@ -28,6 +28,31 @@ boolean		fastpalette;				// if true, use outsb to set
 
 byte		palette1[256][3],palette2[256][3];
 
+boolean		vlinear;
+byte		*vmem;
+int			scrwidth = 320;
+int			vlxoff;
+int			vluix;						// vlxoff of the 320 wide screens
+unsigned	screenbwide = 80;
+unsigned	screensize = 80*208;
+static	unsigned	vdisplay;			// the page shown
+static	boolean		vdirty;				// drawn on since
+
+int		VESA_Start (int wantw, int wanth);
+void	VESA_Stop (void);
+void	VESA_Present (byte *page);
+boolean	VESA_SetPalette (byte *palette, int first, int count);
+void	VESA_GetPalette (byte *palette);
+boolean	VESA_Indexed (void);
+
+#define LPIX(ofs)	(vmem + (unsigned long)(ofs)*4)
+
+static byte *UIPixel (int x, int y)
+{
+	vdirty = true;
+	return LPIX(bufferofs+ylookup[y]) + vlxoff + x;
+}
+
 //===========================================================================
 
 
@@ -108,8 +133,63 @@ void	VL_Shutdown (void)
 =======================
 */
 
+static	int		widew,wideh;
+
+static boolean VL_WantWidescreen (void)
+{
+	int		i,want;
+
+	want = false;
+	for (i=1;i<_argc;i++)
+	{
+		if (!stricmp (_argv[i],"-widescreen"))
+			want = true;
+		if (!stricmp (_argv[i],"-vesa") && i+1 < _argc
+		&& sscanf (_argv[i+1],"%dx%d",&widew,&wideh) == 2)
+			want = true;
+	}
+	if (!want)
+	{
+		FILE *f = fopen ("VIDEO.CFG","r");		// SETUP's choice
+		if (f)
+		{
+			char	line[80];
+			while (fgets (line,sizeof(line),f))
+			{
+				if (!strnicmp (line,"widescreen=1",12))
+					want = true;
+				if (!strnicmp (line,"vesa=",5))
+					sscanf (line+5,"%dx%d",&widew,&wideh);
+			}
+			fclose (f);
+		}
+	}
+	return want;
+}
+
 void	VL_SetVGAPlaneMode (void)
 {
+	if (!vlinear && VL_WantWidescreen ())
+	{
+		int	width = VESA_Start (widew,wideh);
+
+		if (width)
+		{
+			vlinear = true;
+			scrwidth = width;
+			screenbwide = width/4;
+			vluix = vlxoff = (width-320)/2;
+			screensize = screenbwide*208;
+			vmem = calloc ((screensize*3+0x10000ul)*4,1);
+			if (!vmem)
+				Quit ("No memory for the widescreen pages");
+			VL_SetLineWidth (screenbwide/2);
+			return;
+		}
+	}
+	if (vlinear)
+		return;
+
 	__dpmi_regs	r;
 
 	memset (&r,0,sizeof(r));
@@ -131,6 +211,8 @@ void	VL_SetVGAPlaneMode (void)
 
 void	VL_SetTextMode (void)
 {
+	VESA_Stop ();
+
 	__dpmi_regs	r;
 
 	memset (&r,0,sizeof(r));
@@ -152,6 +234,13 @@ void	VL_SetTextMode (void)
 
 void VL_ClearVideo (byte color)
 {
+	if (vlinear)
+	{
+		memset (vmem,color,(screensize*3+0x10000ul)*4);
+		vdirty = true;
+		return;
+	}
+
 	outportb (GC_INDEX,GC_MODE);
 	outportb (GC_INDEX+1,inportb(GC_INDEX+1)&0xfc);	// write mode 0 to store directly to video
 
@@ -235,6 +324,14 @@ void VL_DePlaneVGA (void)
 void VL_SetLineWidth (unsigned width)
 {
 	int i,offset;
+	if (vlinear)
+	{
+		linewidth = width*2;
+		for (i=0;i<MAXSCANLINES;i++)
+			ylookup[i] = i*linewidth;
+		return;
+	}
+
 
 //
 // set wide virtual screen
@@ -265,6 +362,9 @@ void VL_SetLineWidth (unsigned width)
 
 void VL_SetSplitScreen (int linenum)
 {
+	if (vlinear)
+		return;
+
 	VL_WaitVBL (1);
 	linenum=linenum*2-1;
 	outportb (CRTC_INDEX,CRTC_LINECOMPARE);
@@ -297,6 +397,19 @@ void VL_SetSplitScreen (int linenum)
 void VL_WaitVBL (int vbls)
 {
 	long	n;
+	if (vlinear)
+	{
+		VL_PresentDirty ();
+		while (vbls-- > 0)		// a VESA card may not have the VGA's retrace bit
+		{
+			for (n=0 ; n<20000 && (inportb (STATUS_REGISTER_1) & 8) ; n++)
+				;
+			for (n=0 ; n<20000 && !(inportb (STATUS_REGISTER_1) & 8) ; n++)
+				;
+		}
+		return;
+	}
+
 
 	while (vbls-- > 0)
 	{
@@ -321,6 +434,12 @@ void VL_WaitVBL (int vbls)
 
 void VL_SetCRTC (int crtc)
 {
+	if (vlinear)
+	{
+		VL_Present (crtc);
+		return;
+	}
+
 	DISABLE();
 
 	while (inportb (STATUS_REGISTER_1) & 1)	// 1 = display is disabled (HBL / VBL)
@@ -359,6 +478,12 @@ void VL_SetCRTC (int crtc)
 
 void VL_SetScreen (int crtc, int pel)
 {
+	if (vlinear)
+	{
+		VL_Present (crtc);
+		return;
+	}
+
 	long	n;
 
 	for (n=0 ; n<VGAWAITMAX && (inportb (STATUS_REGISTER_1) & 8) ; n++)
@@ -404,6 +529,19 @@ void VL_SetScreen (int crtc, int pel)
 void VL_FillPalette (int red, int green, int blue)
 {
 	int	i;
+	if (vlinear && !VESA_Indexed ())
+	{
+		byte	p[768];
+		for (i=0;i<256;i++)
+		{
+			p[i*3] = red;
+			p[i*3+1] = green;
+			p[i*3+2] = blue;
+		}
+		VL_SetPalette (p);
+		return;
+	}
+
 
 	outportb (PEL_WRITE_ADR,0);
 	for (i=0;i<256;i++)
@@ -426,6 +564,15 @@ void VL_FillPalette (int red, int green, int blue)
 
 void VL_SetColor	(int color, int red, int green, int blue)
 {
+	if (vlinear && !VESA_Indexed ())
+	{
+		byte	p[3];
+		p[0] = red; p[1] = green; p[2] = blue;
+		if (VESA_SetPalette (p,color,1))
+			VL_Present (vdisplay);
+		return;
+	}
+
 	outportb (PEL_WRITE_ADR,color);
 	outportb (PEL_DATA,red);
 	outportb (PEL_DATA,green);
@@ -444,6 +591,16 @@ void VL_SetColor	(int color, int red, int green, int blue)
 
 void VL_GetColor	(int color, int *red, int *green, int *blue)
 {
+	if (vlinear && !VESA_Indexed ())
+	{
+		byte	p[768];
+		VESA_GetPalette (p);
+		*red = p[color*3];
+		*green = p[color*3+1];
+		*blue = p[color*3+2];
+		return;
+	}
+
 	outportb (PEL_READ_ADR,color);
 	*red = inportb (PEL_DATA);
 	*green = inportb (PEL_DATA);
@@ -465,6 +622,12 @@ void VL_GetColor	(int color, int *red, int *green, int *blue)
 
 void VL_SetPalette (byte *palette)
 {
+	if (vlinear && VESA_SetPalette (palette,0,256))
+	{
+		VL_Present (vdisplay);		// direct color: show it in the new colors
+		return;
+	}
+
 	int	i;
 
 	outportb (PEL_WRITE_ADR,0);
@@ -495,6 +658,12 @@ void VL_SetPalette (byte *palette)
 
 void VL_GetPalette (byte *palette)
 {
+	if (vlinear && !VESA_Indexed ())
+	{
+		VESA_GetPalette (palette);
+		return;
+	}
+
 	int	i;
 
 	outportb (PEL_READ_ADR,0);
@@ -636,6 +805,12 @@ void VL_TestPaletteSet (void)
 
 void VL_ColorBorder (int color)
 {
+	if (vlinear)
+	{
+		bordercolor = color;
+		return;
+	}
+
 	__dpmi_regs	r;
 
 	memset (&r,0,sizeof(r));
@@ -670,6 +845,12 @@ byte	rightmasks[4] = {1,3,7,15};
 
 void VL_Plot (int x, int y, int color)
 {
+	if (vlinear)
+	{
+		*UIPixel (x,y) = color;
+		return;
+	}
+
 	byte mask;
 
 	mask = pixmasks[x&3];
@@ -689,6 +870,12 @@ void VL_Plot (int x, int y, int color)
 
 void VL_Hlin (unsigned x, unsigned y, unsigned width, unsigned color)
 {
+	if (vlinear)
+	{
+		memset (UIPixel (x,y),color,width);
+		return;
+	}
+
 	unsigned		xbyte;
 	byte			*dest;
 	byte			leftmask,rightmask;
@@ -734,6 +921,17 @@ void VL_Hlin (unsigned x, unsigned y, unsigned width, unsigned color)
 
 void VL_Vlin (int x, int y, int height, int color)
 {
+	if (vlinear)
+	{
+		byte *p = UIPixel (x,y);
+		while (height-- > 0)
+		{
+			*p = color;
+			p += scrwidth;
+		}
+		return;
+	}
+
 	byte	*dest,mask;
 
 	mask = pixmasks[x&3];
@@ -761,6 +959,19 @@ void VL_Vlin (int x, int y, int height, int color)
 
 void VL_Bar (int x, int y, int width, int height, int color)
 {
+	if (vlinear)
+	{
+		byte *p = UIPixel (x,y);
+		if (x == 0 && width >= 320 && vlxoff == vluix)
+			VL_ClearMargins (y,height,color);	// a whole screen: its sides too
+		while (height-- > 0)
+		{
+			memset (p,color,width);
+			p += scrwidth;
+		}
+		return;
+	}
+
 	byte	*dest;
 	byte	leftmask,rightmask;
 	int		midbytes,linedelta;
@@ -823,6 +1034,20 @@ void VL_MemToLatch (byte *source, int width, int height, unsigned dest)
 {
 	unsigned	count;
 	byte	plane,mask;
+	if (vlinear)
+	{
+		// stored as rows of width pixels
+		int		w4 = (width+3)/4,p,y,k;
+		byte	*d = LPIX(dest);
+		count = w4*height;
+		for (p=0;p<4;p++)
+			for (y=0;y<height;y++)
+				for (k=0;k<w4;k++)
+					if (p+4*k < width)
+						d[y*width+p+4*k] = source[p*count+y*w4+k];
+		return;
+	}
+
 
 	count = ((width+3)/4)*height;
 	mask = 1;
@@ -853,6 +1078,23 @@ void VL_MemToLatch (byte *source, int width, int height, unsigned dest)
 
 void VL_MemToScreen (byte *source, int width, int height, int x, int y)
 {
+	if (vlinear)
+	{
+		// the pic is munged: plane by plane, a quarter of the pixels each
+		int		w4 = width>>2,p,yy,k;
+		byte	*d = UIPixel (x,y);
+		if (x == 0 && width >= 320 && vlxoff == vluix)
+			VL_ClearMargins (y,height,0);
+		for (p=0;p<4;p++)
+			for (yy=0;yy<height;yy++)
+			{
+				byte *row = d + yy*scrwidth + p;
+				for (k=0;k<w4;k++)
+					row[k*4] = *source++;
+			}
+		return;
+	}
+
 	byte    *screen,*dest,mask;
 	int		plane;
 
@@ -888,6 +1130,22 @@ void VL_MemToScreen (byte *source, int width, int height, int x, int y)
 
 void VL_MaskedToScreen (byte *source, int width, int height, int x, int y)
 {
+	if (vlinear)
+	{
+		// the pic is munged: plane by plane, a quarter of the pixels each
+		int		w4 = width>>2,p,yy,k;
+		byte	*d = UIPixel (x,y);
+		
+		for (p=0;p<4;p++)
+			for (yy=0;yy<height;yy++)
+			{
+				byte *row = d + yy*scrwidth + p;
+				for (k=0;k<w4;k++)
+					row[k*4] = *source++;
+			}
+		return;
+	}
+
 	byte    *screen,*dest,mask;
 	int		plane;
 
@@ -939,6 +1197,18 @@ static void VL_LatchCopy (volatile byte *src, volatile byte *dest, int count)
 
 void VL_LatchToScreen (unsigned source, int width, int height, int x, int y)
 {
+	if (vlinear)
+	{
+		byte	*s = LPIX(source),*d = UIPixel (x,y);
+		while (height-- > 0)
+		{
+			memcpy (d,s,width*4);
+			s += width*4;
+			d += scrwidth;
+		}
+		return;
+	}
+
 	byte	*src,*dest;
 
 	VGAWRITEMODE(1);
@@ -970,6 +1240,23 @@ void VL_LatchToScreen (unsigned source, int width, int height, int x, int y)
 
 void VL_ScreenToScreen (unsigned source, unsigned dest,int width, int height)
 {
+	if (vlinear)
+	{
+		byte	*s,*d;
+		if (width == 80)
+			width = screenbwide;	// "the whole width"
+		s = LPIX(source);
+		d = LPIX(dest);
+		vdirty = true;
+		while (height-- > 0)
+		{
+			memmove (d,s,width*4);
+			s += scrwidth;
+			d += scrwidth;
+		}
+		return;
+	}
+
 	byte	*src,*dst;
 
 	VGAMAPMASK(15);
@@ -1010,6 +1297,22 @@ void VL_ScreenToScreen (unsigned source, unsigned dest,int width, int height)
 
 void VL_DrawTile8String (char *str, char *tile8ptr, int printx, int printy)
 {
+	if (vlinear)
+	{
+		int		p,row,k;
+		byte	*src,*d;
+		for ( ; *str ; str++,printx+=8)
+		{
+			src = (byte *)tile8ptr + (*str<<6);
+			d = UIPixel (printx,printy);
+			for (p=0;p<4;p++)
+				for (row=0;row<8;row++)
+					for (k=0;k<2;k++)
+						d[row*scrwidth+p+4*k] = *src++;
+		}
+		return;
+	}
+
 	int		i,plane;
 	word	*dest,*screen,*src;
 
@@ -1047,6 +1350,19 @@ void VL_DrawTile8String (char *str, char *tile8ptr, int printx, int printy)
 void VL_DrawLatch8String (char *str, unsigned tile8ptr, int printx, int printy)
 {
 	int		i;
+	if (vlinear)
+	{
+		byte	*s2,*d2;
+		for ( ; *str ; str++,printx+=8)
+		{
+			s2 = LPIX(tile8ptr + (*str<<4));
+			d2 = UIPixel (printx,printy);
+			for (i=0;i<8;i++,s2+=8,d2+=scrwidth)
+				memcpy (d2,s2,8);
+		}
+		return;
+	}
+
 	unsigned	src,dest;
 	byte	*s,*d;
 
@@ -1085,4 +1401,85 @@ void VL_SizeTile8String (char *str, int *width, int *height)
 {
 	*height = 8;
 	*width = 8*strlen(str);
+}
+
+
+/*
+=============================================================================
+
+						WIDESCREEN
+
+=============================================================================
+*/
+
+/*
+=================
+=
+= VL_Present
+=
+= Shows the page at ofs (widescreen: there's no CRTC start address to set)
+=
+=================
+*/
+
+void VL_Present (unsigned ofs)
+{
+	if (!vlinear)
+		return;
+	vdisplay = ofs;
+	vdirty = false;
+	VESA_Present (LPIX(ofs));
+}
+
+byte *VL_UIPixel (int x, int y)
+{
+	return UIPixel (x,y);
+}
+
+byte *VL_Linear (unsigned ofs)
+{
+	vdirty = true;
+	return LPIX(ofs);
+}
+
+void VL_PresentDirty (void)
+{
+	if (vlinear && vdirty)
+		VL_Present (vdisplay);
+}
+
+
+/*
+=================
+=
+= VL_ClearMargins
+=
+= The sides of the screen, left and right of the 320 wide screens, on all
+= three pages
+=
+=================
+*/
+
+void VL_ClearMargins (int y, int height, int color)
+{
+	int		page,row;
+	byte	*p;
+
+	if (!vlinear || !vluix)
+		return;
+	if (y < 0)
+	{
+		height += y;
+		y = 0;
+	}
+	if (y+height > 200)
+		height = 200-y;
+	vdirty = true;
+	for (page=0;page<3;page++)
+		for (row=y;row<y+height;row++)
+		{
+			p = LPIX(page*screensize + ylookup[row]);
+			memset (p,color,vluix);
+			memset (p+vluix+320,color,scrwidth-vluix-320);
+		}
 }

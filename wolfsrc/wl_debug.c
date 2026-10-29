@@ -154,6 +154,11 @@ void PicturePause (void)
 		return;
 	}
 
+	if (vlinear)				// widescreen: there's no planar screen to grab
+	{
+		VW_ColorBorder (0);
+		return;
+	}
 	VW_ColorBorder (1);
 	VW_SetScreen (0,0);
 //

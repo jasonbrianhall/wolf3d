@@ -205,6 +205,31 @@ static void ScaleLine (void)
 	word	*cmd,top;
 	byte	*dest,*screen,mask,color;
 
+	if (vlinear)
+	{
+		// widescreen: all slinewidth columns at once
+		dest = VL_Linear (bufferofs) + slinex;
+		cmd = (word *)(lineshape+linecmds);
+		while ((endsrc = cmd[0]/2) != 0)
+		{
+			top = cmd[1];
+			startsrc = cmd[2]/2;
+			cmd += 3;
+			for (src=startsrc;src<endsrc;src++)
+			{
+				y = linescale->startrow[src];
+				end = linescale->endrow[src];
+				if (y >= end)
+					continue;
+				color = lineshape[(word)(top+src)];
+				screen = dest + y*scrwidth;
+				for (;y<end;y++,screen+=scrwidth)
+					memset (screen,color,slinewidth);
+			}
+		}
+		return;
+	}
+
 	x = slinex;
 	lastx = slinex+slinewidth-1;
 	while (x <= lastx)

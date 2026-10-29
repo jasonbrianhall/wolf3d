@@ -770,6 +770,55 @@ void SetupGameLevel (void)
 /*
 ===================
 =
+= DrawWideBorder
+=
+= Widescreen: the view and its border span the whole width (DrawPlayBorder
+= and DrawPlayBorderSides in 320 pixels assume the 4:3 screen)
+=
+===================
+*/
+
+static void DrawWideBorder (boolean all)
+{
+	int	xl,yl,save;
+
+	save = vlxoff;
+	vlxoff = 0;					// the whole width, not the 320 in the middle
+
+	xl = scrwidth/2-viewwidth/2;
+	yl = (200-STATUSLINES-viewheight)/2;
+
+	if (all)
+	{
+		VW_Bar (0,0,scrwidth,200-STATUSLINES,127);
+		VW_Bar (xl,yl,viewwidth,viewheight,0);
+	}
+	else if (viewwidth < scrwidth)
+	{
+		VW_Bar (0,0,xl-1,200-STATUSLINES,127);
+		VW_Bar (xl+viewwidth+1,0,xl-2,200-STATUSLINES,127);
+	}
+
+	if (viewwidth < scrwidth)
+	{
+		if (all)
+		{
+			VW_Hlin (xl-1,xl+viewwidth,yl-1,0);
+			VW_Hlin (xl-1,xl+viewwidth,yl+viewheight,125);
+		}
+		VW_Vlin (yl-1,yl+viewheight,xl-1,0);
+		VW_Vlin (yl-1,yl+viewheight,xl+viewwidth,125);
+		if (all)
+			VW_Plot (xl-1,yl+viewheight,124);
+	}
+
+	vlxoff = save;
+}
+
+
+/*
+===================
+=
 = DrawPlayBorderSides
 =
 = To fix window overwrites
@@ -780,6 +829,12 @@ void SetupGameLevel (void)
 void DrawPlayBorderSides (void)
 {
 	int	xl,yl;
+
+	if (vlinear)
+	{
+		DrawWideBorder (false);
+		return;
+	}
 
 	xl = 160-viewwidth/2;
 	yl = (200-STATUSLINES-viewheight)/2;
@@ -847,6 +902,12 @@ void DrawAllPlayBorder (void)
 void DrawPlayBorder (void)
 {
 	int	xl,yl;
+
+	if (vlinear)
+	{
+		DrawWideBorder (true);
+		return;
+	}
 
 	VWB_Bar (0,0,320,200-STATUSLINES,127);
 
