@@ -191,6 +191,7 @@ typedef	struct
 
 
 // Global variables
+extern	boolean		GUSPresent;
 extern	boolean		AdLibPresent,
 					SoundSourcePresent,
 					SoundBlasterPresent,

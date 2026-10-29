@@ -60,6 +60,12 @@ from the command line (``-sfx``, ``-music``, ``-digi``, ``-mouse``,
 ``-joystick``, ``-sensitivity``, ``-viewsize``) and are saved when you
 quit; ``-defaults`` ignores the ``CONFIG`` file.
 
+The Gravis UltraSound works too (``ULTRASND=`` as set by its install;
+``nogus`` to ignore it): it has no AdLib chip, so the music and AdLib
+sound effects go through an OPL2 in software (DOSBox's dbopl) and are
+mixed with the digitized sounds into a stream the card plays from its
+own memory. That takes some CPU: a fast 486 or a Pentium.
+
 Needs a 386 with a 387 (or a 486DX or later; else put ``EMU387.DXE``
 next to it) and 4 MB of RAM. Runs in plain DOS, FreeDOS, Windows 9x and
 DOSBox, not in Windows NT/XP's DOS box.

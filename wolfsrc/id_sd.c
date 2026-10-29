@@ -87,6 +87,7 @@ volatile	word		HackCount;
 
 //	Internal variables
 static	boolean			SD_Started;
+static	boolean			gusNoCheck;
 		boolean			nextsoundpos;
 volatile longword		TimerDivisor,TimerCount;
 static	char			*ParmStrings[] =
@@ -99,8 +100,19 @@ static	char			*ParmStrings[] =
 							"ss1",
 							"ss2",
 							"ss3",
+							"nogus",
 							nil
 						};
+
+//	Gravis UltraSound (id_gus.c): an AdLib in software plus the digitized
+//	sounds, streamed to the card
+		boolean		GUSPresent;
+boolean	GUS_Startup (void);
+void	GUS_Shutdown (void);
+void	GUS_Service (void);
+void	GUS_AdLibWrite (int reg, int val);
+void	GUS_PlaySample (byte *data, longword len);
+void	GUS_StopSample (void);
 static	void			(*SoundUserHook)(void);
 volatile soundnames		SoundNumber,DigiNumber;
 volatile word			SoundPriority,DigiPriority;
@@ -237,6 +249,7 @@ SDL_SetTimerSpeed(void)
 	(
 		(MusicMode == smm_AdLib)
 	||	((DigiMode == sds_SoundSource) && DigiPlaying)
+	||	GUSPresent					// the stream needs filling often
 	)
 	{
 		rate = TickBase * 10;
@@ -278,6 +291,13 @@ SDL_SBStopSample(void)
 {
 	byte	is;
 	int		picport,picbit;
+
+	if (GUSPresent)
+	{
+		GUS_StopSample();
+		return;
+	}
+	{
 	DISABLE();
 
 	if (sbSamplePlaying)
@@ -298,6 +318,7 @@ SDL_SBStopSample(void)
 	}
 
 	RESTORE();
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -398,6 +419,12 @@ SDL_SBPlaySample(byte *data,longword len)
 	longword	used;
 	int			picport;
 
+	if (GUSPresent)
+	{
+		GUS_PlaySample(data,len);
+		return;
+	}
+
 	SDL_SBStopSample();
 
 	DISABLE();
@@ -436,7 +463,7 @@ SDL_PositionSBP(int leftpos,int rightpos)
 {
 	byte	v;
 
-	if (!SBProPresent)
+	if (!SBProPresent || GUSPresent)
 		return;
 
 	leftpos = 15 - leftpos;
@@ -1260,6 +1287,15 @@ void
 alOut(byte n,byte b)
 {
 	int	i;
+
+	if (GUSPresent)
+	{
+		DISABLE();
+		GUS_AdLibWrite(n,b);
+		RESTORE();
+		return;
+	}
+	{
 	DISABLE();
 
 	outportb(alFMAddr,n);
@@ -1271,6 +1307,7 @@ alOut(byte n,byte b)
 
 	for (i = 0;i < 35;i++)		// and 23 usec after the data
 		inportb(alFMStatus);
+	}
 }
 
 #if 0
@@ -1709,6 +1746,7 @@ SD_Startup(void)
 
 	ssIsTandy = false;
 	ssNoCheck = false;
+	gusNoCheck = false;
 	alNoCheck = false;
 	sbNoCheck = false;
 	sbNoProCheck = false;
@@ -1744,6 +1782,9 @@ SD_Startup(void)
 			ssPort = 3;
 			ssNoCheck = SoundSourcePresent = true;
 			break;
+		case 8:						// don't use the Gravis UltraSound
+			gusNoCheck = true;
+			break;
 		}
 	}
 #endif
@@ -1758,7 +1799,14 @@ SD_Startup(void)
 	if (!ssNoCheck)
 		SoundSourcePresent = SDL_DetectSoundSource();
 
-	if (!alNoCheck)
+	if (!gusNoCheck && GUS_Startup())
+	{
+		// it stands in for both the AdLib and the Sound Blaster
+		GUSPresent = true;
+		AdLibPresent = true;
+		SoundBlasterPresent = true;
+	}
+	else if (!alNoCheck)
 	{
 		AdLibPresent = SDL_DetectAdLib();
 		if (AdLibPresent && !sbNoCheck)
@@ -1825,7 +1873,7 @@ SD_Startup(void)
 	for (i = 0;i < 255;i++)
 		pcSoundLookup[i] = i * 60;
 
-	if (SoundBlasterPresent)
+	if (SoundBlasterPresent && !GUSPresent)
 		SDL_StartSB();
 
 	SDL_SetupDigi();
@@ -1901,7 +1949,7 @@ SD_Shutdown(void)
 	SDL_ShutDevice();
 	SDL_CleanDevice();
 
-	if (SoundBlasterPresent)
+	if (SoundBlasterPresent && !GUSPresent)
 		SDL_ShutSB();
 
 	if (SoundSourcePresent)
@@ -1916,6 +1964,8 @@ SD_Shutdown(void)
 
 	RESTORE();
 	}
+
+	GUS_Shutdown();
 
 	SD_Started = false;
 }
@@ -2416,6 +2466,8 @@ SDL_t0Service(void)
 			SDL_DoMusic();
 		if (ssSample)
 			SDL_SSService();
+		if (GUSPresent)
+			GUS_Service();
 		break;
 
 	default:
@@ -2489,6 +2541,7 @@ SD_EmergencyShutdown(void)
 		sbSamplePlaying = false;
 		sbOut(sbWriteCmd,0xd0);
 	}
+	GUS_Shutdown();
 	enable();
 	if (AdLibPresent)
 		SDL_CleanAL();

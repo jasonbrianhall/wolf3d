@@ -113,7 +113,7 @@ static void DefaultConfig (void)
 	memcpy (cfg.scores,defscores,sizeof(defscores));
 	cfg.sd = 2;							// AdLib
 	cfg.sm = 1;							// AdLib
-	cfg.sds = getenv ("BLASTER") ? 3 : 0;
+	cfg.sds = getenv ("BLASTER") || getenv ("ULTRASND") ? 3 : 0;
 	cfg.mouseenabled = 1;
 	memcpy (cfg.dirscan,dirs,sizeof(dirs));
 	memcpy (cfg.buttonscan,buttons,sizeof(buttons));
@@ -555,9 +555,9 @@ static int Form (const char *title, field_t *fields, int count, int *cursor,
 /* ------------------------------------------------------------------ */
 /* the screens                                                         */
 
-static const char *sfxnames[] = {"Off","PC Speaker","AdLib / Sound Blaster"};
-static const char *musicnames[] = {"Off","AdLib / Sound Blaster"};
-static const char *diginames[] = {"Off","PC Speaker","Sound Source","Sound Blaster"};
+static const char *sfxnames[] = {"Off","PC Speaker","AdLib / SB / UltraSound"};
+static const char *musicnames[] = {"Off","AdLib / SB / UltraSound"};
+static const char *diginames[] = {"Off","PC Speaker","Sound Source","Sound Blaster / UltraSound"};
 static const char *onoff[] = {"Off","On"};
 static const char *mbuttons[] = {"(nothing)","Fire","Strafe","Run","Open / Use"};
 static const char *joynames[] = {"Off","Port 1","Port 2"};
@@ -575,7 +575,10 @@ static void SoundScreen (void)
 		{F_CHOICE,"Digitized sound",&cfg.sds,0,3,diginames},
 	};
 
-	sprintf (note,"BLASTER=%.40s",getenv ("BLASTER") ? getenv ("BLASTER") : "(not set)");
+	if (getenv ("ULTRASND"))
+		sprintf (note,"ULTRASND=%.30s: the UltraSound is used",getenv ("ULTRASND"));
+	else
+		sprintf (note,"BLASTER=%.40s",getenv ("BLASTER") ? getenv ("BLASTER") : "(not set)");
 	while (Form ("Sound",f,3,&cursor,note) != -1)
 		;
 }
