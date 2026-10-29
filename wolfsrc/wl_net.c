@@ -94,6 +94,8 @@ typedef struct
 	long	spawnx,spawny;
 	int		spawnangle;
 	long	anim;
+	int		moving;				// frames left of the walking animation
+	int		pain;				// frames left of the pain frame
 
 	boolean	gone;				// left the game: no controls after lastframe
 	long	lastframe;
@@ -105,6 +107,8 @@ typedef struct
 } netplayer_t;
 
 static	netplayer_t	np[MAXPLAYERS];
+static	int		hello_ff;			// friendly fire (player 1's choice)
+static	boolean	SpawnSpotClear (netplayer_t *p);
 
 /*
 =============================================================================
@@ -342,7 +346,18 @@ objtype *NetFindTarget (objtype *shooter, boolean knife, long *dist)
 	best = 0x7fffffffl;
 	for (check = playerobjs[0] ; check ; check = check->next)
 	{
-		if (check->obclass == playerobj || !(check->flags & FL_SHOOTABLE))
+		if (check->obclass == playerobj)
+		{
+			int i;
+			if (!hello_ff || check == shooter)
+				continue;
+			for (i=0;i<numplayers;i++)
+				if (np[i].ob == check)
+					break;
+			if (i == numplayers || np[i].dead)
+				continue;
+		}
+		else if (!(check->flags & FL_SHOOTABLE))
 			continue;
 		if (!NetProject (shooter,check,&nx,&off))
 			continue;
@@ -420,7 +435,7 @@ void T_NetDead (objtype *ob)
 	if (p->removed)
 		return;
 	p->respawn += tics;
-	if (p->respawn >= RESPAWNTICS)
+	if (p->respawn >= RESPAWNTICS && SpawnSpotClear (p))
 		Respawn (p);
 }
 
@@ -476,35 +491,245 @@ static void NetPickups (objtype *ob)
 /*
 ===================
 =
+= NetDamagePlayer
+=
+= Friendly fire: the current player hit another one
+=
+===================
+*/
+
+void NetDamagePlayer (objtype *target, int damage, objtype *attacker)
+{
+	int	i,shooter;
+
+	for (i=0;i<numplayers;i++)
+		if (np[i].ob == target)
+			break;
+	if (i == numplayers || np[i].dead)
+		return;
+	shooter = netcontext;
+	NetSetContext (i);
+	TakeDamage (damage,attacker);
+	NetSetContext (shooter);
+}
+
+void NetPlayerHurt (void)
+{
+	np[netcontext].pain = 6;
+}
+
+
+/*
+===================
+=
+= NetPlayerBlocked
+=
+= Players are solid to each other, like actors: a move that ends up
+= within MINACTORDIST of another live player is refused, unless they
+= already overlapped (respawned on each other) and it takes them apart
+=
+===================
+*/
+
+long	netoldx,netoldy;		// set by ClipMove: where the mover started
+
+boolean NetPlayerBlocked (objtype *ob)
+{
+	int		i;
+	objtype	*other;
+	long	dx,dy,olddx,olddy,newd,oldd;
+
+	for (i=0;i<numplayers;i++)
+	{
+		other = np[i].ob;
+		if (other == ob || np[i].dead)
+			continue;
+		dx = labs (ob->x - other->x);
+		dy = labs (ob->y - other->y);
+		if (dx >= MINACTORDIST || dy >= MINACTORDIST)
+			continue;
+		olddx = labs (netoldx - other->x);
+		olddy = labs (netoldy - other->y);
+		newd = dx > dy ? dx : dy;
+		oldd = olddx > olddy ? olddx : olddy;
+		if (oldd < MINACTORDIST && newd > oldd)
+			continue;			// getting out of an overlap
+		return true;
+	}
+	return false;
+}
+
+static boolean SpawnSpotClear (netplayer_t *p)
+{
+	int i;
+
+	for (i=0;i<numplayers;i++)
+		if (&np[i] != p && !np[i].dead
+		&& labs (np[i].ob->x - p->spawnx) < MINACTORDIST
+		&& labs (np[i].ob->y - p->spawny) < MINACTORDIST)
+			return false;
+	return true;
+}
+
+
+/*
+=============================================================================
+
+						 HOW THE OTHERS LOOK
+
+The other players are drawn with the SS sprites (eight directions, a gun,
+walking, shooting, pain and death frames), recolored so the uniform is a
+different color for each player and nobody takes them for an enemy.
+The copies are made from the game's own data when first needed.
+
+=============================================================================
+*/
+
+#define NUMSSFRAMES	(SPR_SS_SHOOT3-SPR_SS_S_1+1)
+
+static	byte	*netshapes[MAXPLAYERS][NUMSSFRAMES];
+static	byte	netcolors[MAXPLAYERS][256];
+static	boolean	netcolorsmade;
+
+static void MakeColors (void)
+{
+	int		p,c,i,r,g,b,nr,ng,nb,best,bestd,d,dr,dg,db;
+	byte	*pal = gamepal;
+
+	for (p=0;p<MAXPLAYERS;p++)
+		for (c=0;c<256;c++)
+		{
+			netcolors[p][c] = c;
+			r = pal[c*3]; g = pal[c*3+1]; b = pal[c*3+2];
+			if (b < r+4 || b < g+4)
+				continue;			// only the blue of the uniform
+			switch (p)
+			{
+			case 0: nr = r; ng = b; nb = g; break;			// green
+			case 1: nr = b; ng = g; nb = r; break;			// red
+			case 2: nr = b; ng = b*3/4; nb = r/2; break;	// gold
+			default: nr = ng = nb = (r+g+b*2)/3; break;		// white
+			}
+			best = c;
+			bestd = 0x7fffffff;
+			for (i=0;i<255;i++)
+			{
+				dr = pal[i*3]-nr; dg = pal[i*3+1]-ng; db = pal[i*3+2]-nb;
+				d = dr*dr*3 + dg*dg*4 + db*db*2;
+				if (d < bestd)
+				{
+					bestd = d;
+					best = i;
+				}
+			}
+			netcolors[p][c] = best;
+		}
+	netcolorsmade = true;
+}
+
+memptr NetShape (int shapenum)
+{
+	int		p,frame,page,col,src,end,start;
+	byte	*orig,*copy;
+	word	*cmd,top;
+	t_compshape *shape;
+
+	p = (shapenum >> 10) & 3;
+	frame = shapenum & 0x3ff;
+	if (frame < SPR_SS_S_1 || frame > SPR_SS_SHOOT3)
+		return PM_GetSpritePage (frame);
+
+	copy = netshapes[p][frame-SPR_SS_S_1];
+	if (copy)
+		return copy;
+
+	if (!netcolorsmade)
+		MakeColors ();
+
+	page = PMSpriteStart + frame;
+	orig = PM_GetPage (page);
+	copy = malloc (PMPages[page].length);
+	if (!copy)
+		return orig;
+	memcpy (copy,orig,PMPages[page].length);
+
+	// recolor exactly the pixels the scaler reads
+	shape = (t_compshape *)orig;
+	for (col=0 ; col <= shape->rightpix-shape->leftpix ; col++)
+	{
+		cmd = (word *)(orig + shape->dataofs[col]);
+		while ((end = cmd[0]/2) != 0)
+		{
+			top = cmd[1];
+			start = cmd[2]/2;
+			for (src=start;src<end;src++)
+				copy[(word)(top+src)] = netcolors[p][orig[(word)(top+src)]];
+			cmd += 3;
+		}
+	}
+
+	netshapes[p][frame-SPR_SS_S_1] = copy;
+	return copy;
+}
+
+
+/*
+===================
+=
 = NetPlayerShape
 =
-= How another player looks in the local view (0 = not drawn)
+= Which frame of another player the local view shows (0 = none); called
+= after TransformActor, so ob->viewx is set
 =
 ===================
 */
 
 int NetPlayerShape (objtype *ob)
 {
-	int i;
+	int			i,angle,viewangle,frame,wf;
+	netplayer_t	*p;
 
 	for (i=0;i<numplayers;i++)
 		if (np[i].ob == ob)
 			break;
-	if (i == numplayers || np[i].dead)
+	if (i == numplayers || np[i].removed)
 		return 0;
-#ifndef SPEAR
-	return SPR_BJ_W1 + ((np[i].anim >> 15) & 3);
-#else
+	p = &np[i];
+
+	if (p->dead)
 	{
-		// no BJ sprite in Spear: an SS, turned the way the player faces
-		int angle = (player->angle-180) - ob->angle + ANGLES/16;
-		while (angle >= ANGLES)
-			angle -= ANGLES;
-		while (angle < 0)
-			angle += ANGLES;
-		return SPR_SS_W1_1 + ((np[i].anim >> 15) & 3)*8 + angle/(ANGLES/8);
+		if (p->respawn < 8)
+			frame = SPR_SS_DIE_1;
+		else if (p->respawn < 16)
+			frame = SPR_SS_DIE_2;
+		else if (p->respawn < 24)
+			frame = SPR_SS_DIE_3;
+		else
+			frame = SPR_SS_DEAD;
+		return NETSHAPEFLAG | (i<<10) | frame;
 	}
-#endif
+
+	// which way it faces from here
+	viewangle = player->angle + (centerx - ob->viewx)/8;
+	angle = (viewangle-180) - ob->angle + ANGLES/16;
+	while (angle >= ANGLES)
+		angle -= ANGLES;
+	while (angle < 0)
+		angle += ANGLES;
+	angle /= ANGLES/8;
+
+	wf = i == netcontext ? gamestate.weaponframe : p->weaponframe;
+
+	if (p->pain)
+		frame = SPR_SS_PAIN_1;
+	else if (wf && (angle == 0 || angle == 1 || angle == 7))
+		frame = wf == 1 ? SPR_SS_SHOOT1 : wf == 2 ? SPR_SS_SHOOT2 : SPR_SS_SHOOT3;
+	else if (p->moving)
+		frame = SPR_SS_W1_1 + ((p->anim >> 14) & 3)*8 + angle;
+	else
+		frame = SPR_SS_S_1 + angle;
+
+	return NETSHAPEFLAG | (i<<10) | frame;
 }
 
 
@@ -734,14 +959,14 @@ static int IPXGet (void *buf, byte *from)
 
 enum {pk_hello=1,pk_tics,pk_quit};
 
-#define NETVERSION	1
+#define NETVERSION	2
 
 typedef struct
 {
 	byte	magic[2];
 	byte	type,version;
 	byte	numnodes,episode,level,skill;
-	byte	gotcount,pad[3];
+	byte	gotcount,friendlyfire,pad[2];
 } __attribute__((packed)) hellopacket_t;
 
 typedef struct
@@ -816,6 +1041,7 @@ static void SendHello (byte *to)
 	pk.episode = hello_episode;
 	pk.level = hello_level;
 	pk.skill = hello_skill;
+	pk.friendlyfire = hello_ff;
 	pk.gotcount = numplayers;
 	IPXSend (0,to,&pk,sizeof(pk));
 }
@@ -926,7 +1152,7 @@ static int ParmInt (char *name, int def)
 void NetStartup (void)
 {
 	byte	addrs[MAXPLAYERS][10];
-	int		settings[MAXPLAYERS][3];
+	int		settings[MAXPLAYERS][4];
 	boolean	done[MAXPLAYERS];
 	byte	buf[PKTMAX],from[10];
 	hellopacket_t *pk = (hellopacket_t *)buf;
@@ -951,6 +1177,10 @@ void NetStartup (void)
 	if (hello_episode < 0 || hello_episode > 5) hello_episode = 0;
 	if (hello_level < 0 || hello_level > 20) hello_level = 0;
 	if (hello_skill < 0 || hello_skill > 3) hello_skill = 2;
+	hello_ff = 1;
+	for (i=1;i<_argc;i++)
+		if (!stricmp (_argv[i],"-nofriendlyfire") || !stricmp (_argv[i],"-noff"))
+			hello_ff = 0;
 
 	netgame = true;
 	numplayers = nodes;
@@ -978,6 +1208,7 @@ void NetStartup (void)
 	settings[0][0] = hello_episode;
 	settings[0][1] = hello_level;
 	settings[0][2] = hello_skill;
+	settings[0][3] = hello_ff;
 	done[0] = false;
 	found = 1;
 	shown = 0;
@@ -999,6 +1230,7 @@ void NetStartup (void)
 			h.episode = hello_episode;
 			h.level = hello_level;
 			h.skill = hello_skill;
+			h.friendlyfire = hello_ff;
 			h.gotcount = found;
 			IPXSend (0,broadcast,&h,sizeof(h));
 			if (extra && !--extra)
@@ -1036,6 +1268,7 @@ void NetStartup (void)
 				settings[i][0] = pk->episode;
 				settings[i][1] = pk->level;
 				settings[i][2] = pk->skill;
+				settings[i][3] = pk->friendlyfire;
 				if (pk->gotcount == nodes)
 					done[i] = true;
 			}
@@ -1076,7 +1309,7 @@ void NetStartup (void)
 			if (memcmp (addrs[j],addrs[i],10) < 0)
 			{
 				byte t[10];
-				int  s[3];
+				int  s[4];
 				memcpy (t,addrs[i],10); memcpy (addrs[i],addrs[j],10); memcpy (addrs[j],t,10);
 				memcpy (s,settings[i],sizeof(s)); memcpy (settings[i],settings[j],sizeof(s)); memcpy (settings[j],s,sizeof(s));
 			}
@@ -1091,9 +1324,10 @@ void NetStartup (void)
 	hello_episode = settings[0][0];
 	hello_level = settings[0][1];
 	hello_skill = settings[0][2];
+	hello_ff = settings[0][3];
 
-	printf ("You are player %d of %d: episode %d, level %d, skill %d\n",
-		localplayer+1,nodes,hello_episode+1,hello_level+1,hello_skill);
+	printf ("You are player %d of %d: episode %d, level %d, skill %d, friendly fire %s\n",
+		localplayer+1,nodes,hello_episode+1,hello_level+1,hello_skill,hello_ff ? "on" : "off");
 }
 
 
@@ -1474,10 +1708,18 @@ static void RunFrame (long f)
 			oldx = obj->x;
 			oldy = obj->y;
 			DoActor (obj);
+			if (np[i].pain)
+				np[i].pain--;
 			if (!np[i].dead)
 			{
 				NetPickups (obj);
-				np[i].anim += labs(obj->x-oldx) + labs(obj->y-oldy);
+				if (obj->x != oldx || obj->y != oldy)
+				{
+					np[i].anim += labs(obj->x-oldx) + labs(obj->y-oldy);
+					np[i].moving = 4;
+				}
+				else if (np[i].moving)
+					np[i].moving--;
 			}
 		}
 		else

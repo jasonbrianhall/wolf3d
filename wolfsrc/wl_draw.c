@@ -1048,8 +1048,9 @@ void DrawScaleds (void)
 	{
 		if (netgame && obj->obclass == playerobj)
 		{
-			if (obj == player || !(visptr->shapenum = NetPlayerShape (obj)))
+			if (obj == player)
 				continue;
+			visptr->shapenum = 1;			// picked after TransformActor
 		}
 		else if (!(visptr->shapenum = obj->state->shapenum))
 			continue;						// no shape
@@ -1079,11 +1080,19 @@ void DrawScaleds (void)
 
 			visptr->viewx = obj->viewx;
 			visptr->viewheight = obj->viewheight;
-			if (visptr->shapenum == -1)
-				visptr->shapenum = obj->temp1;	// special shape
+			if (netgame && obj->obclass == playerobj)
+			{
+				if (!(visptr->shapenum = NetPlayerShape (obj)))
+					continue;
+			}
+			else
+			{
+				if (visptr->shapenum == -1)
+					visptr->shapenum = obj->temp1;	// special shape
 
-			if (obj->state->rotate && obj->obclass != playerobj)
-				visptr->shapenum += CalcRotate (obj);
+				if (obj->state->rotate)
+					visptr->shapenum += CalcRotate (obj);
+			}
 
 			if (visptr < &vislist[MAXVISABLE-1])	// don't let it overflow
 				visptr++;

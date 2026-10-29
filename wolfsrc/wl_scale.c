@@ -276,7 +276,7 @@ void ScaleShape (int xcenter, int shapenum, unsigned height)
 	boolean		leftvis,rightvis;
 
 
-	shape = PM_GetSpritePage (shapenum);
+	shape = (shapenum & NETSHAPEFLAG) ? NetShape (shapenum) : PM_GetSpritePage (shapenum);
 
 	scale = height>>3;						// low three bits are fractional
 	if (!scale || scale>maxscale)
@@ -480,7 +480,7 @@ void SimpleScaleShape (int xcenter, int shapenum, unsigned height)
 	boolean		leftvis,rightvis;
 
 
-	shape = PM_GetSpritePage (shapenum);
+	shape = (shapenum & NETSHAPEFLAG) ? NetShape (shapenum) : PM_GetSpritePage (shapenum);
 
 	scale = height>>1;
 	comptable = scaledirectory[scale];

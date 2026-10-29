@@ -412,6 +412,8 @@ void	TakeDamage (int points,objtype *attacker)
 
 	if (!godmode)
 		gamestate.health -= points;
+	if (netgame)
+		NetPlayerHurt ();
 
 	if (gamestate.health<=0)
 	{
@@ -845,6 +847,12 @@ boolean TryMove (objtype *ob)
 		}
 
 //
+// other players are solid too
+//
+	if (netgame && NetPlayerBlocked (ob))
+		return false;
+
+//
 // check for actors
 //
 	if (yl>0)
@@ -892,6 +900,8 @@ void ClipMove (objtype *ob, long xmove, long ymove)
 
 	basex = ob->x;
 	basey = ob->y;
+	netoldx = basex;
+	netoldy = basey;
 
 	ob->x = basex+xmove;
 	ob->y = basey+ymove;
@@ -1163,7 +1173,12 @@ void	KnifeAttack (objtype *ob)
 	{
 		closest = NetFindTarget (ob,true,&dist);
 		if (closest && dist <= 0x18000l)
-			DamageActor (closest,US_RndT() >> 4);
+		{
+			if (closest->obclass == playerobj)
+				NetDamagePlayer (closest,US_RndT() >> 4,ob);
+			else
+				DamageActor (closest,US_RndT() >> 4);
+		}
 		return;
 	}
 // actually fire
@@ -1274,7 +1289,10 @@ void	GunAttack (objtype *ob)
 		damage = US_RndT() / 6;
 	}
 
-	DamageActor (closest,damage);
+	if (closest->obclass == playerobj)
+		NetDamagePlayer (closest,damage,ob);		// friendly fire
+	else
+		DamageActor (closest,damage);
 }
 
 //===========================================================================
