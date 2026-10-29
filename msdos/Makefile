@@ -122,6 +122,8 @@ get-csdpmi:
 		wget $(CSDPMI_URL); \
 		unzip -o csdpmi7b.zip -d csdpmi; \
 	fi
+	@python3 cwsnoswap.py csdpmi/bin/CWSDPMI.EXE csdpmi/bin/CWSDSTUB.EXE || \
+		echo "python3 missing: CWSDPMI keeps its swap file"
 
 # One compiler run, then link (no make inside the container).
 $(COFF_TARGET): $(C_SRCS) $(CXX_SRCS) $(HDRS) Makefile | pull-djgpp

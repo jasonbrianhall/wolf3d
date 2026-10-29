@@ -22,9 +22,11 @@ Activision, as sold on Steam and GOG), ``wl6apo`` (1.4 Apogee),
 demo, make ``spear.exe``). It uses ``i586-pc-msdosdjgpp-gcc`` if it's on
 the PATH, the ``djfdyuruiry/djgpp`` Docker image otherwise.
 
-There's no memory scan at startup: memory is plain ``malloc`` and the
-page file is read into memory once, so the conventional / EMS / XMS
-probing and paging are gone. The assembly (raycaster, compiled scalers,
+There's no memory check at startup at all: memory is plain ``malloc``
+(a machine without enough gets "Out of memory"), the page file is read
+into memory once, and the signon screen's gauges just show full, so the
+conventional / EMS / XMS probing and paging are gone and nothing asks
+the DPMI host how much memory there is. The assembly (raycaster, compiled scalers,
 sound interrupt handlers, decompressors) is C. The hardware is driven as
 before: mode X VGA, keyboard and timer interrupts, PC speaker, AdLib,
 Sound Blaster (``BLASTER=``) and Sound Source. ``CONFIG`` files are
@@ -68,6 +70,13 @@ The Gravis UltraSound works too (``ULTRASND=`` as set by its install;
 sound effects go through an OPL2 in software (DOSBox's dbopl) and are
 mixed with the digitized sounds into a stream the card plays from its
 own memory. That takes some CPU: a fast 486 or a Pentium.
+
+The built-in CWSDPMI has its swap file turned off (``cwsnoswap.py``
+makes CWSPARAM's change when the build fetches it): the game locks its
+memory anyway, and on machines with a lot of RAM CWSDPMI would otherwise
+page its own page tables to ``C:\CWSDPMI.SWP``, which makes startup
+crawl. ``wolf3d -timing`` writes how long each startup step took to
+``STARTUP.TXT``.
 
 Needs a 386 with a 387 (or a 486DX or later; else put ``EMU387.DXE``
 next to it) and 4 MB of RAM. Runs in plain DOS, FreeDOS, Windows 9x and

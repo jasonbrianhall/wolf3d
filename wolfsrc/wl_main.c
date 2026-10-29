@@ -209,6 +209,7 @@ static void ShowHelp (void)
 "  -sensitivity 0-9         mouse sensitivity\n"
 "  -viewsize 4-20           size of the 3D view (20: no border)\n"
 "  -defaults                ignore the CONFIG file (detect the hardware)\n"
+"  -timing                  write how long each startup step took to STARTUP.TXT\n"
 "\n"
 "Hardware (as in the original):\n"
 "  nowait                   skip the intro screens\n"
@@ -1351,14 +1352,20 @@ void InitGame (void)
 		virtualreality = false;
 
 	MM_Startup ();                  // so the signon screen can be freed
+	DOS32_Mark ("MM_Startup");
 
 	SignonScreen ();
+	DOS32_Mark ("SignonScreen");
 
 	VW_Startup ();
+	DOS32_Mark ("VW_Startup");
 	IN_Startup ();
+	DOS32_Mark ("IN_Startup");
 	PM_Startup ();
+	DOS32_Mark ("PM_Startup");
 	PM_UnlockMainMem ();
 	SD_Startup ();
+	DOS32_Mark ("SD_Startup");
 #ifndef JAPAN
 	if (GUSPresent)			// the menu names what's really playing
 	{
@@ -1369,7 +1376,9 @@ void InitGame (void)
 	}
 #endif
 	CA_Startup ();
+	DOS32_Mark ("CA_Startup");
 	US_Startup ();
+	DOS32_Mark ("US_Startup");
 
 
 #ifndef SPEAR
@@ -1413,6 +1422,7 @@ void InitGame (void)
 	bufferofs = 0;
 	displayofs = 0;
 	ReadConfig ();
+	DOS32_Mark ("ReadConfig");
 
 
 //
@@ -1437,8 +1447,10 @@ void InitGame (void)
 	MM_SetLock (&grsegs[STARTFONT],true);
 
 	LoadLatchMem ();
+	DOS32_Mark ("LoadLatchMem");
 	BuildTables ();          // trig tables
 	SetupWalls ();
+	DOS32_Mark ("SetupWalls");
 
 #if 0
 {
@@ -1453,12 +1465,15 @@ close(profilehandle);
 #endif
 
 	NewViewSize (viewsize);
+	DOS32_Mark ("NewViewSize");
 
 
 //
 // initialize variables
 //
 	InitRedShifts ();
+	DOS32_Mark ("InitRedShifts");
+	DOS32_WriteMarks ();
 	if (!virtualreality)
 		FinishSignon();
 

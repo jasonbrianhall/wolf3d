@@ -25,32 +25,63 @@ static boolean	dos32started;
 /*
 =================
 =
-= DOS32_MemoryFree
+= DOS32_Mark / DOS32_WriteMarks
 =
-= Bytes the DPMI host can still give us (physical memory, as virtual
-= memory would be no good to the interrupt handlers anyway)
+= -timing: how long each part of the startup took, in STARTUP.TXT
 =
 =================
 */
 
+static	boolean	timing;
+static	int		nummarks;
+static	char	*marknames[32];
+static	long	marktimes[32];
+
+void DOS32_Mark (char *what)
+{
+	if (!timing || nummarks == 32)
+		return;
+	marknames[nummarks] = what;
+	marktimes[nummarks] = _farpeekl (_dos_ds,0x46c);	// 18.2 per second
+	nummarks++;
+}
+
+void DOS32_WriteMarks (void)
+{
+	FILE	*f;
+	int		i;
+
+	if (!timing || !nummarks)
+		return;
+	f = fopen ("STARTUP.TXT","w");
+	if (!f)
+		return;
+	fprintf (f,"Seconds since main() started:\n");
+	for (i=0;i<nummarks;i++)
+		fprintf (f,"%7.2f  %s\n",(marktimes[i]-marktimes[0])/18.2065,marknames[i]);
+	fclose (f);
+	nummarks = 0;
+}
+
+
+/*
+=================
+=
+= DOS32_MemoryFree
+=
+= What the signon screen's memory gauges and the old 640K checks are
+= told. The memory isn't checked at all (that's what made the original
+= crawl on big machines): memory comes from malloc as needed, and a
+= machine without enough for the game gets "Out of memory" from it.
+=
+=================
+*/
+
+#define REPORTEDMEMORY	(16L*1024*1024)
+
 long DOS32_MemoryFree (void)
 {
-	__dpmi_free_mem_info	info;
-	unsigned long			pages;
-
-	if (__dpmi_get_free_memory_information (&info))
-		return 4L*1024*1024;
-
-	pages = info.total_number_of_free_pages;
-	if (pages == 0xfffffffful)
-	{
-		if (info.largest_available_free_block_in_bytes == 0xfffffffful)
-			return 4L*1024*1024;
-		return info.largest_available_free_block_in_bytes;
-	}
-	if (pages > 0x7ffff)
-		pages = 0x7ffff;
-	return pages*4096;
+	return REPORTEDMEMORY;
 }
 
 
@@ -90,6 +121,13 @@ static void DOS32_Fault (int sig)
 
 void DOS32_Startup (void)
 {
+	{
+		int i;
+		for (i=1;i<_argc;i++)
+			if (!stricmp (_argv[i],"-timing"))
+				timing = true;
+		DOS32_Mark ("main");
+	}
 	if (dos32started)
 		return;
 
