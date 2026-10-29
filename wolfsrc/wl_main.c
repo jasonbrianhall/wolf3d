@@ -207,7 +207,7 @@ static void ShowHelp (void)
 "  -digi off|sb|ss          digitized sound (Sound Blaster, Sound Source)\n"
 "  -mouse on|off            -joystick off|1|2\n"
 "  -sensitivity 0-9         mouse sensitivity\n"
-"  -viewsize 4-20           size of the 3D view\n"
+"  -viewsize 4-20           size of the 3D view (20: no border)\n"
 "  -defaults                ignore the CONFIG file (detect the hardware)\n"
 "\n"
 "Hardware (as in the original):\n"
