@@ -79,10 +79,12 @@ ifeq ($(DOCKER),1)
 # The whole repository is mounted, so ../wolfsrc is reachable.
 RUN      = docker run --rm -v $(abspath ..):/src:z -w /src/msdos -u $(USER_ID):$(GROUP_ID) $(DJGPP_IMAGE) /bin/sh -c
 CC_DOS   = gcc
+CXX_DOS  = i586-pc-msdosdjgpp-g++
 EXE2COFF = exe2coff
 else
 RUN      = /bin/sh -c
 CC_DOS   = $(CROSS)gcc
+CXX_DOS  = $(CROSS)g++
 EXE2COFF = $(shell command -v $(CROSS)exe2coff 2>/dev/null || echo $(dir $(shell command -v $(CROSS)gcc))../i586-pc-msdosdjgpp/bin/exe2coff)
 endif
 
@@ -93,16 +95,19 @@ endif
 ARCH     = -march=i386 -mtune=i586
 CFLAGS   = -O2 $(ARCH) -std=gnu89 -fcommon -ffloat-store -fno-strict-aliasing -w $(VERDEF) -I$(SRC)
 LDFLAGS  = -s
+CXXFLAGS = -O2 $(ARCH) -fno-exceptions -fno-rtti -w -I$(SRC)
 
 WOLF_SRC := id_ca id_in id_mm id_pm id_sd id_us_1 id_us_a id_vh id_vl \
             wl_act1 wl_act2 wl_agent wl_debug wl_draw wl_game wl_inter wl_main \
             wl_menu wl_net wl_play wl_scale wl_state \
-            wl_map dos32 gamepal signon
+            wl_map dos32 gamepal signon id_gus
 # Spear has no help or end texts (wl_text.c wasn't in its project either)
 ifeq ($(filter sod sdm,$(VERSION)),)
 WOLF_SRC += wl_text
 endif
 C_SRCS   := $(addprefix $(SRC)/,$(addsuffix .c,$(WOLF_SRC)))
+# DOSBox's OPL emulator: the AdLib for the Gravis UltraSound
+CXX_SRCS := $(SRC)/dbopl.cpp $(SRC)/oplemu.cpp
 HDRS     := $(wildcard $(SRC)/*.h)
 
 all: msdos_embedded setup
@@ -119,10 +124,11 @@ get-csdpmi:
 	fi
 
 # One compiler run, then link (no make inside the container).
-$(COFF_TARGET): $(C_SRCS) $(HDRS) Makefile | pull-djgpp
+$(COFF_TARGET): $(C_SRCS) $(CXX_SRCS) $(HDRS) Makefile | pull-djgpp
 	$(RUN) "mkdir -p $(BUILD) && \
-		cd $(BUILD) && $(CC_DOS) $(CFLAGS:-I%=-I../../%) -c $(addprefix ../../,$(C_SRCS)) && cd ../.. && \
-		$(CC_DOS) $(LDFLAGS) $(BUILD)/*.o -lm -o $(BUILD)/$(DOS_TARGET) && \
+		cd $(BUILD) && $(CC_DOS) $(CFLAGS:-I%=-I../../%) -c $(addprefix ../../,$(C_SRCS)) && \
+		$(CXX_DOS) $(CXXFLAGS:-I%=-I../../%) -c $(addprefix ../../,$(CXX_SRCS)) && cd ../.. && \
+		$(CXX_DOS) $(LDFLAGS) $(BUILD)/*.o -lm -o $(BUILD)/$(DOS_TARGET) && \
 		$(EXE2COFF) $(BUILD)/$(DOS_TARGET) && mv $(BUILD)/$(DOS_COFF) $(COFF_TARGET)"
 
 # Needs CWSDPMI.EXE (or another DPMI host) at run time.

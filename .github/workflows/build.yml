@@ -87,6 +87,9 @@ jobs:
                      (not the DOS box of Windows NT/2000/XP).
           Sound:     set BLASTER=A220 I5 D1 (or similar) for the Sound
                      Blaster; AdLib, PC speaker and Sound Source work too.
+                     Gravis UltraSound: ULTRASND= as its install sets it
+                     (music in software: wants a fast 486 or a Pentium);
+                     nogus to ignore it.
           Options:   WOLF3D /? lists them. Settings can be changed without
                      the menus, e.g. -music off -sfx pc -digi off, and are
                      saved when you quit; -defaults ignores the CONFIG file.

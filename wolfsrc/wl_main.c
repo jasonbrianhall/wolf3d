@@ -214,6 +214,7 @@ static void ShowHelp (void)
 "  nowait                   skip the intro screens\n"
 "  noal nosb nopro noss     don't use AdLib / Sound Blaster / SB Pro mixer /\n"
 "                           Sound Source\n"
+"  nogus                    don't use the Gravis UltraSound (ULTRASND=)\n"
 "  sst ss1 ss2 ss3          Sound Source: Tandy / LPT1-3\n"
 "  nomouse nojoys           don't use the mouse / joysticks\n"
 "  Sound Blaster settings come from BLASTER= (e.g. A220 I5 D1)\n"
@@ -1358,6 +1359,15 @@ void InitGame (void)
 	PM_Startup ();
 	PM_UnlockMainMem ();
 	SD_Startup ();
+#ifndef JAPAN
+	if (GUSPresent)			// the menu names what's really playing
+	{
+		extern CP_itemtype far SndMenu[];
+		strcpy (SndMenu[2].string,"Gravis UltraSound");
+		strcpy (SndMenu[7].string,"Gravis UltraSound");
+		strcpy (SndMenu[11].string,"Gravis UltraSound");
+	}
+#endif
 	CA_Startup ();
 	US_Startup ();
 
