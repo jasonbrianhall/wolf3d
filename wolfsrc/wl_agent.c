@@ -248,8 +248,15 @@ void StatusDrawPic (unsigned x, unsigned y, unsigned picnum)
 	if (!NetIsLocal ())
 		return;			// another player's status changed
 
+	int			savex;
+
 	temp = bufferofs;
 	bufferofs = 0;
+
+	// widescreen: the status bar is in the middle, even when this is
+	// called from the 3D view (a bonus picked up in DrawScaleds)
+	savex = vlxoff;
+	vlxoff = vluix;
 
 	bufferofs = PAGE1START+(200-STATUSLINES)*SCREENWIDTH;
 	LatchDrawPic (x,y,picnum);
@@ -258,6 +265,7 @@ void StatusDrawPic (unsigned x, unsigned y, unsigned picnum)
 	bufferofs = PAGE3START+(200-STATUSLINES)*SCREENWIDTH;
 	LatchDrawPic (x,y,picnum);
 
+	vlxoff = savex;
 	bufferofs = temp;
 }
 
