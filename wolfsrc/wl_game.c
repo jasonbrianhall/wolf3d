@@ -640,6 +640,8 @@ void SetupGameLevel (void)
 	 gamestate.treasurecount=0;
 	}
 
+	AM_Clear ();
+
 	if (demoplayback || demorecord || netgame)
 		US_InitRndT (false);
 	else

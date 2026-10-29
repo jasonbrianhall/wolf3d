@@ -97,7 +97,7 @@ LDFLAGS  = -s
 WOLF_SRC := id_ca id_in id_mm id_pm id_sd id_us_1 id_us_a id_vh id_vl \
             wl_act1 wl_act2 wl_agent wl_debug wl_draw wl_game wl_inter wl_main \
             wl_menu wl_net wl_play wl_scale wl_state \
-            dos32 gamepal signon
+            wl_map dos32 gamepal signon
 # Spear has no help or end texts (wl_text.c wasn't in its project either)
 ifeq ($(filter sod sdm,$(VERSION)),)
 WOLF_SRC += wl_text

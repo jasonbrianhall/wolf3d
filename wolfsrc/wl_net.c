@@ -1766,6 +1766,9 @@ static void NetCheckKeys (void)
 	if (screenfaded)
 		return;
 
+	if (AM_Keys (LastScan))
+		LastScan = sc_None;
+
 	if (LastScan == sc_Escape || LastScan == sc_F10)
 	{
 		long lastsend = TimeCount;
