@@ -94,6 +94,9 @@ jobs:
                      the menus, e.g. -music off -sfx pc -digi off, and are
                      saved when you quit; -defaults ignores the CONFIG file.
                      nowait, nomouse, nojoys, noal, nosb as in the original.
+          Widescreen: -widescreen, or Widescreen in SETUP's Display screen:
+                     a 16:9 VESA mode with a wider 3D view (-vesa WxH to
+                     pick the mode). The normal VGA mode without one.
           Automap:   Tab (map, map over the view, off); + and - zoom.
           Setup:     SETUP.EXE sets sound, keys, mouse, joystick and view
                      size (it writes the CONFIG file). IPXSETUP.EXE is the

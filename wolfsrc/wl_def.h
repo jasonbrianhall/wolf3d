@@ -76,7 +76,7 @@
 
 #define	SCREENSEG		0xa000
 
-#define SCREENBWIDE		80
+#define SCREENBWIDE		screenbwide
 
 #define HEIGHTRATIO		0.50		// also defined in id_mm.c
 
@@ -117,7 +117,7 @@
 
 #define	MAXSCALEHEIGHT	256				// largest scale on largest view
 
-#define MAXVIEWWIDTH		320
+#define MAXVIEWWIDTH		512
 
 #define MAPSIZE		64					// maps are 64*64 max
 #define NORTH	0
@@ -128,7 +128,7 @@
 
 #define STATUSLINES		40
 
-#define SCREENSIZE		(SCREENBWIDE*208)
+#define SCREENSIZE		screensize			// SCREENBWIDE*208
 #define PAGE1START		0
 #define PAGE2START		(SCREENSIZE)
 #define PAGE3START		(SCREENSIZE*2u)

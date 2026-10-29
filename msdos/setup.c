@@ -189,11 +189,45 @@ static void SaveMacros (void)
 	macrosdirty = 0;
 }
 
+/* widescreen, kept in VIDEO.CFG (the game reads it; -widescreen works too) */
+static int16_t	widescreen;
+static char		vesaline[40];
+
+static void LoadVideo (void)
+{
+	FILE	*f = fopen ("VIDEO.CFG","r");
+	char	line[80];
+
+	if (!f)
+		return;
+	while (fgets (line,sizeof(line),f))
+	{
+		if (!strnicmp (line,"widescreen=",11))
+			widescreen = atoi (line+11) != 0;
+		if (!strnicmp (line,"vesa=",5))
+			strncpy (vesaline,line,sizeof(vesaline)-1);
+	}
+	fclose (f);
+}
+
+static void SaveVideo (void)
+{
+	FILE	*f = fopen ("VIDEO.CFG","w");
+
+	if (!f)
+		return;
+	fprintf (f,"widescreen=%d\n",widescreen);
+	if (vesaline[0])
+		fputs (vesaline,f);
+	fclose (f);
+}
+
 static int SaveConfig (void)
 {
 	FILE *f;
 
 	SaveMacros ();
+	SaveVideo ();
 	f = fopen (cfgname,"wb");
 	if (!f)
 		return 0;
@@ -761,9 +795,10 @@ static void DisplayScreen (void)
 	field_t	f[] =
 	{
 		{F_NUMBER,"View size (4-20)",&cfg.viewsize,4,20},
+		{F_CHOICE,"Widescreen (16:9 VESA)",&widescreen,0,1,onoff},
 	};
 
-	while (Form ("Display",f,1,&cursor,"20 fills the screen: no border") != -1)
+	while (Form ("Display",f,2,&cursor,"20 fills the screen: no border") != -1)
 		;
 }
 
@@ -939,6 +974,7 @@ int main (int argc, char **argv)
 	LoadConfig ();
 	LoadNet ();
 	LoadMacros ();
+	LoadVideo ();
 
 	for (i=1;i<argc;i++)
 		if (!strcmp (argv[i],"/?") || !strcmp (argv[i],"-?") || !stricmp (argv[i],"-h")

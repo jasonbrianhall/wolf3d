@@ -210,6 +210,8 @@ static void ShowHelp (void)
 "  -viewsize 4-20           size of the 3D view (20: no border)\n"
 "  -defaults                ignore the CONFIG file (detect the hardware)\n"
 "  -timing                  write how long each startup step took to STARTUP.TXT\n"
+"  -widescreen              a 16:9 (or 16:10) VESA mode with a wider view\n"
+"  -vesa WxH                widescreen in that VESA mode; -vesabits 8|15|16|24|32\n"
 "\n"
 "Hardware (as in the original):\n"
 "  nowait                   skip the intro screens\n"
@@ -859,7 +861,9 @@ void CalcProjection (long focal)
 
 	focallength = focal;
 	facedist = focal+MINDIST;
-	halfview = viewwidth/2;                                 // half view in pixels
+	halfview = viewheight;                                  // half a 4:3 view in pixels
+	// (a widescreen view is wider than twice its height: the same scale,
+	// more angle)
 
 //
 // calculate scale value for vertical height calculations
@@ -878,14 +882,14 @@ void CalcProjection (long focal)
 // calculate the angle offset from view angle of each pixel's ray
 //
 
-	for (i=0;i<halfview;i++)
+	for (i=0;i<viewwidth/2;i++)
 	{
 	// start 1/2 pixel over, so viewangle bisects two middle pixels
-		tang = (long)i*VIEWGLOBAL/viewwidth/facedist;
+		tang = (long)i*VIEWGLOBAL/(2*halfview)/facedist;
 		angle = atan(tang);
 		intang = angle*radtoint;
-		pixelangle[halfview-1-i] = intang;
-		pixelangle[halfview+i] = -intang;
+		pixelangle[viewwidth/2-1-i] = intang;
+		pixelangle[viewwidth/2+i] = -intang;
 	}
 
 //
@@ -965,7 +969,7 @@ void FinishSignon (void)
 {
 
 #ifndef SPEAR
-	VW_Bar (0,189,300,11,*VGAMEM);
+	VW_Bar (0,189,300,11,(vlinear ? *VL_UIPixel (0,0) : *VGAMEM));
 	WindowX = 0;
 	WindowW = 320;
 	PrintY = 190;
@@ -985,7 +989,7 @@ void FinishSignon (void)
 		IN_Ack ();
 
 	#ifndef JAPAN
-	VW_Bar (0,189,300,11,*VGAMEM);
+	VW_Bar (0,189,300,11,(vlinear ? *VL_UIPixel (0,0) : *VGAMEM));
 
 	PrintY = 190;
 	SETFONTCOLOR(10,4);
@@ -1355,6 +1359,10 @@ void InitGame (void)
 	DOS32_Mark ("MM_Startup");
 
 	SignonScreen ();
+	screenloc[0] = PAGE1START;		// the page size is known now (widescreen)
+	screenloc[1] = PAGE2START;
+	screenloc[2] = PAGE3START;
+	freelatch = FREESTART;
 	DOS32_Mark ("SignonScreen");
 
 	VW_Startup ();
@@ -1415,7 +1423,7 @@ void InitGame (void)
 	blockstart = &blockstarts[0];
 	for (y=0;y<UPDATEHIGH;y++)
 		for (x=0;x<UPDATEWIDE;x++)
-			*blockstart++ = SCREENWIDTH*16*y+x*TILEWIDTH;
+			*blockstart++ = SCREENWIDTH*16*y+x*TILEWIDTH + vluix/4;
 
 	updateptr = &update[0];
 
@@ -1505,8 +1513,8 @@ boolean SetViewSize (unsigned width, unsigned height)
 	viewwidth = width&~15;                  // must be divisable by 16
 	viewheight = height&~1;                 // must be even
 	centerx = viewwidth/2-1;
-	shootdelta = viewwidth/10;
-	screenofs = ((200-STATUSLINES-viewheight)/2*SCREENWIDTH+(320-viewwidth)/8);
+	shootdelta = viewheight/5;				// viewwidth/10 of a 4:3 view
+	screenofs = ((200-STATUSLINES-viewheight)/2*SCREENWIDTH+(scrwidth-viewwidth)/8);
 
 //
 // calculate trace angles and projection constants
@@ -1517,7 +1525,7 @@ boolean SetViewSize (unsigned width, unsigned height)
 // build all needed compiled scalers
 //
 //	MM_BombOnError (false);
-	SetupScaling (viewwidth*1.5);
+	SetupScaling (viewheight*3);			// viewwidth*1.5 of a 4:3 view
 #if 0
 	MM_BombOnError (true);
 	if (mmerror)
@@ -1531,6 +1539,24 @@ boolean SetViewSize (unsigned width, unsigned height)
 }
 
 
+/*
+==========================
+=
+= ViewWidthFor
+=
+= The view's width for a view size: 16 pixels a step, 320 at 20; in
+= widescreen as much wider as the screen is (all of it at 20)
+=
+==========================
+*/
+
+int ViewWidthFor (int size)
+{
+	if (scrwidth == 320)
+		return size*16;
+	return ((long)size*scrwidth/20) & ~15;
+}
+
 void ShowViewSize (int width)
 {
 	int     oldwidth,oldheight;
@@ -1538,9 +1564,11 @@ void ShowViewSize (int width)
 	oldwidth = viewwidth;
 	oldheight = viewheight;
 
-	viewwidth = width*16;
+	viewwidth = ViewWidthFor (width);
 	viewheight = width*16*HEIGHTRATIO;
 	DrawPlayBorder ();
+	if (vlinear)		// it went past the update blocks: show all of it
+		VW_ScreenToScreen (bufferofs,displayofs,screenbwide,200-STATUSLINES);
 
 	viewheight = oldheight;
 	viewwidth = oldwidth;
@@ -1552,7 +1580,7 @@ void NewViewSize (int width)
 	CA_UpLevel ();
 	MM_SortMem ();
 	viewsize = width;
-	SetViewSize (width*16,width*16*HEIGHTRATIO);
+	SetViewSize (ViewWidthFor (width),width*16*HEIGHTRATIO);
 	CA_DownLevel ();
 }
 

@@ -73,7 +73,7 @@ void Quit (char *error);
 
 #define SCREENSEG		0xa000
 
-#define SCREENWIDTH		80			// default screen width in bytes
+#define SCREENWIDTH		screenbwide	// bytes (4 pixels) per row: 80, more in widescreen
 #define MAXSCANLINES	200			// size of ylookup table
 
 #define CHARWIDTH		2
@@ -92,19 +92,41 @@ extern	unsigned	ylookup[MAXSCANLINES];
 extern	boolean		screenfaded;
 extern	unsigned	bordercolor;
 
+//
+// Widescreen (-widescreen): the pages are rows of scrwidth pixels in
+// main memory (vmem) instead of planar VGA memory, and VL_Present shows
+// one, scaled, in a 16:9 VESA mode. Offsets keep their unit (4 pixels),
+// so pixel x,y of the page at ofs is vmem[(ofs+ylookup[y])*4+x]. The
+// 320 pixel wide screens (menus, status bar...) are drawn vlxoff pixels
+// in; the 3D view uses the whole width.
+//
+extern	boolean		vlinear;
+extern	byte		*vmem;
+extern	int			scrwidth;			// pixels per row
+extern	int			vlxoff;				// x the 320 wide drawing goes at now
+extern	int			vluix;				// x of the 320 wide screens (vlxoff but in the view)
+extern	unsigned	screenbwide;		// scrwidth/4
+extern	unsigned	screensize;			// a page, in 4 pixel units
+
+void VL_Present (unsigned ofs);			// show the page at ofs (widescreen)
+void VL_PresentDirty (void);			// if anything was drawn since
+void VL_ClearMargins (int y, int height, int color);
+byte *VL_UIPixel (int x, int y);		// pixel x,y of the 320 wide screen at bufferofs
+byte *VL_Linear (unsigned ofs);			// the page memory at ofs
+
 //===========================================================================
 
 //
 // VGA hardware routines
 //
 
-#define VGAWRITEMODE(x) do {\
+#define VGAWRITEMODE(x) do { if (!vlinear) {\
 	outportb (GC_INDEX,GC_MODE);\
 	outportb (GC_INDEX+1,(inportb(GC_INDEX+1)&252)|(x));\
-	} while (0)
+	} } while (0)
 
-#define VGAMAPMASK(x)	outportw (SC_INDEX,SC_MAPMASK+((x)<<8))
-#define VGAREADMAP(x)	outportw (GC_INDEX,GC_READMAP+((x)<<8))
+#define VGAMAPMASK(x)	do { if (!vlinear) outportw (SC_INDEX,SC_MAPMASK+((x)<<8)); } while (0)
+#define VGAREADMAP(x)	do { if (!vlinear) outportw (GC_INDEX,GC_READMAP+((x)<<8)); } while (0)
 
 
 void VL_Startup (void);

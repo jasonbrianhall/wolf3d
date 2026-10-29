@@ -832,7 +832,7 @@ IN_WaitForKey(void)
 	ScanCode	result;
 
 	while (!(result = LastScan))
-		;
+		VL_PresentDirty ();
 	LastScan = 0;
 	return(result);
 }
@@ -849,7 +849,7 @@ IN_WaitForASCII(void)
 	char		result;
 
 	while (!(result = LastASCII))
-		;
+		VL_PresentDirty ();
 	LastASCII = '\0';
 	return(result);
 }
@@ -886,6 +886,8 @@ void IN_StartAck(void)
 boolean IN_CheckAck (void)
 {
 	unsigned	i,buttons;
+
+	VL_PresentDirty ();			// widescreen: show what's been drawn
 
 //
 // see if something has been pressed

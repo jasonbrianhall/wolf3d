@@ -32,9 +32,9 @@
 #ifdef DEBUGWALLS
 unsigned screenloc[3]= {0,0,0};
 #else
-unsigned screenloc[3]= {PAGE1START,PAGE2START,PAGE3START};
+unsigned screenloc[3];				// set by InitGame (the page size varies)
 #endif
-unsigned freelatch = FREESTART;
+unsigned freelatch;
 
 long 	lasttimecount;
 long 	frameon;
@@ -383,6 +383,24 @@ void ScalePost (void)		// VGA version
 		Quit ("BadScale called!");
 
 	source = postsource + posttexture;
+
+	if (vlinear)
+	{
+		// widescreen: the columns, plain
+		byte	*col = VL_Linear (bufferofs) + postx;
+		for (src=0;src<64;src++)
+		{
+			y = comptable->startrow[src];
+			end = comptable->endrow[src];
+			if (y >= end)
+				continue;
+			color = source[src];
+			screen = col + y*scrwidth;
+			for (;y<end;y++,screen+=scrwidth)
+				memset (screen,color,postwidth);
+		}
+		return;
+	}
 
 	x = postx;
 	lastx = postx+postwidth-1;
@@ -934,6 +952,15 @@ void VGAClearScreen (void)
 	VGAMAPMASK(15);						// write through all planes
 
 	halfheight = viewheight/2;
+	if (vlinear)
+	{
+		dest = VL_Linear (bufferofs);
+		for (y=0;y<halfheight;y++,dest+=scrwidth)
+			memset (dest,ceiling&0xff,viewwidth);
+		for (y=0;y<halfheight;y++,dest+=scrwidth)
+			memset (dest,0x19,viewwidth);
+		return;
+	}
 	dest = VGAPTR(bufferofs);
 
 	for (y=0;y<halfheight;y++,dest+=SCREENBWIDE)
@@ -1555,7 +1582,9 @@ void	ThreeDRefresh (void)
 	int tracedir;
 
 // this wouldn't need to be done except for my debugger/video wierdness
-	outportb (SC_INDEX,SC_MAPMASK);
+	if (!vlinear)
+		outportb (SC_INDEX,SC_MAPMASK);
+	vlxoff = 0;				// widescreen: the view's own coordinates
 
 //
 // clear out the traced array
@@ -1597,7 +1626,11 @@ void	ThreeDRefresh (void)
 
 	bufferofs -= screenofs;
 	displayofs = bufferofs;
+	vlxoff = vluix;
 
+	if (vlinear)
+		VL_Present (displayofs);
+	else
 	{
 	DISABLE();
 	outportb (CRTC_INDEX,CRTC_STARTHIGH);	// start address high register
