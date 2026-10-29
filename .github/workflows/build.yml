@@ -91,6 +91,7 @@ jobs:
                      the menus, e.g. -music off -sfx pc -digi off, and are
                      saved when you quit; -defaults ignores the CONFIG file.
                      nowait, nomouse, nojoys, noal, nosb as in the original.
+          Automap:   Tab (map, map over the view, off); + and - zoom.
           Setup:     SETUP.EXE sets sound, keys, mouse, joystick and view
                      size (it writes the CONFIG file). IPXSETUP.EXE is the
                      co-op menu: players, episode, level, skill, friendly

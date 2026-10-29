@@ -748,6 +748,15 @@ void CheckKeys (void)
 	}
 
 //
+// Tab: the automap (+ and - zoom it)
+//
+	if (!DebugOk && AM_Keys (scan))
+	{
+		LastScan = sc_None;
+		return;
+	}
+
+//
 // pause key weirdness can't be checked as a scan code
 //
 	if (Paused)

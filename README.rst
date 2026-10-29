@@ -51,6 +51,10 @@ each other (``-nofriendlyfire`` turns that off; player 1's choice is
 used). The other players are drawn with the SS sprites, recolored green,
 red, gold and white. Esc leaves the game and the others play on.
 
+Tab shows an automap like Doom's (Tab again: the map over the 3D view,
+again: off; ``+`` / ``-`` zoom). It draws the walls around floor you've
+seen, doors, the elevator and the players.
+
 ``wolf3d /?`` lists the options. Sound and control settings can be set
 from the command line (``-sfx``, ``-music``, ``-digi``, ``-mouse``,
 ``-joystick``, ``-sensitivity``, ``-viewsize``) and are saved when you

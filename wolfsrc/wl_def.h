@@ -1281,3 +1281,17 @@ extern	void	HelpScreens(void);
 extern	void	EndText(void);
 
 #include "wl_net.h"
+
+/*
+=============================================================================
+
+						 WL_MAP DEFINITIONS
+
+=============================================================================
+*/
+
+extern	int		automapmode;
+void	AM_Clear (void);
+void	AM_Mark (void);
+void	AM_Draw (void);
+boolean	AM_Keys (int scan);

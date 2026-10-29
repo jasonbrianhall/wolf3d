@@ -1570,12 +1570,16 @@ void	ThreeDRefresh (void)
 	VGAClearScreen ();
 
 	WallRefresh ();
+	AM_Mark ();				// what's in view goes on the automap
 
 //
 // draw all the scaled images
 //
 	DrawScaleds();			// draw scaled stuff
 	DrawPlayerWeapon ();	// draw player's hands
+
+	if (automapmode)
+		AM_Draw ();
 
 //
 // show screen and time last cycle
