@@ -4,6 +4,7 @@
 #   make msdos_original
 #                   wolf3d.exe that needs CWSDPMI.EXE next to it (or any
 #                   other DPMI host: Windows 9x, HDPMI32, ...)
+#   make setup      setup.exe and ipxsetup.exe (the same program; any data)
 #   make run        run it in DOSBox with the game data (DATA=dir)
 #   make clean
 #
@@ -104,7 +105,7 @@ endif
 C_SRCS   := $(addprefix $(SRC)/,$(addsuffix .c,$(WOLF_SRC)))
 HDRS     := $(wildcard $(SRC)/*.h)
 
-all: msdos_embedded
+all: msdos_embedded setup
 
 pull-djgpp:
 ifeq ($(DOCKER),1)
@@ -143,6 +144,24 @@ msdos_embedded: $(COFF_TARGET) get-csdpmi
 
 msdos: msdos_embedded
 
+# SETUP.EXE: settings and the IPX co-op menu, for every VERSION. As
+# IPXSETUP.EXE it starts in the network menu.
+SETUP_COFF = build/setup.coff
+$(SETUP_COFF): setup.c Makefile | pull-djgpp
+	$(RUN) "mkdir -p build/setup && \
+		$(CC_DOS) -O2 $(ARCH) -std=gnu99 -Wall -Wno-unused $(LDFLAGS) setup.c -o build/setup/setup.exe && \
+		$(EXE2COFF) build/setup/setup.exe && mv build/setup/setup $(SETUP_COFF)"
+
+setup: $(SETUP_COFF) get-csdpmi
+	@if [ -f "csdpmi/bin/CWSDSTUB.EXE" ]; then \
+		cat csdpmi/bin/CWSDSTUB.EXE $(SETUP_COFF) > setup.exe; \
+	else \
+		cp build/setup/setup.exe setup.exe; \
+		echo "No CWSDSTUB.EXE: setup.exe needs CWSDPMI.EXE next to it"; \
+	fi
+	cp setup.exe ipxsetup.exe
+	chmod +x setup.exe ipxsetup.exe
+
 # DOSBox with a Sound Blaster 16 and the data copied in.
 DATA ?= .
 DATAEXT = $(if $(filter wl6apo,$(VERSION)),wl6,$(VERSION))
@@ -157,7 +176,7 @@ run: msdos_embedded
 	dosbox -conf build/dosbox.conf -c "mount c build/dosc" -c "c:" -c "$(DOS_TARGET) $(ARGS)"
 
 clean:
-	rm -rf build $(DOS_TARGET) wolf3d.exe spear.exe $(EMBEDDED_TARGET) CWSDPMI.EXE || true
+	rm -rf build $(DOS_TARGET) wolf3d.exe spear.exe setup.exe ipxsetup.exe $(EMBEDDED_TARGET) CWSDPMI.EXE || true
 	rm -rf csdpmi csdpmi7b.zip csdpmi7b.zip.* || true
 
-.PHONY: all pull-djgpp get-csdpmi msdos msdos_original msdos_embedded run clean
+.PHONY: all pull-djgpp get-csdpmi msdos msdos_original msdos_embedded setup run clean
