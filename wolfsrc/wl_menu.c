@@ -2761,8 +2761,8 @@ void CP_ChangeView(void)
 		case dir_North:
 		case dir_East:
 			newview++;
-			if (newview>19)
-				newview=19;
+			if (newview>20)
+				newview=20;			// 20: the whole screen above the status bar
 			ShowViewSize(newview);
 			VW_UpdateScreen();
 			SD_PlaySound(HITWALLSND);

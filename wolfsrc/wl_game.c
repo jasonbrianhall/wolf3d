@@ -782,6 +782,9 @@ void DrawPlayBorderSides (void)
 	xl = 160-viewwidth/2;
 	yl = (200-STATUSLINES-viewheight)/2;
 
+	if (viewwidth >= 320)
+		return;					// full screen: no border
+
 	VWB_Bar (0,0,xl-1,200-STATUSLINES,127);
 	VWB_Bar (xl+viewwidth+1,0,xl-2,200-STATUSLINES,127);
 
@@ -848,6 +851,9 @@ void DrawPlayBorder (void)
 	xl = 160-viewwidth/2;
 	yl = (200-STATUSLINES-viewheight)/2;
 	VWB_Bar (xl,yl,viewwidth,viewheight,0);
+
+	if (viewwidth >= 320)
+		return;					// full screen: no border
 
 	VWB_Hlin (xl-1,xl+viewwidth,yl-1,0);
 	VWB_Hlin (xl-1,xl+viewwidth,yl+viewheight,125);
