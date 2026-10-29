@@ -69,6 +69,13 @@ sound effects go through an OPL2 in software (DOSBox's dbopl) and are
 mixed with the digitized sounds into a stream the card plays from its
 own memory. That takes some CPU: a fast 486 or a Pentium.
 
+The built-in CWSDPMI has its swap file turned off (``cwsnoswap.py``
+makes CWSPARAM's change when the build fetches it): the game locks its
+memory anyway, and on machines with a lot of RAM CWSDPMI would otherwise
+page its own page tables to ``C:\CWSDPMI.SWP``, which makes startup
+crawl. ``wolf3d -timing`` writes how long each startup step took to
+``STARTUP.TXT``.
+
 Needs a 386 with a 387 (or a 486DX or later; else put ``EMU387.DXE``
 next to it) and 4 MB of RAM. Runs in plain DOS, FreeDOS, Windows 9x and
 DOSBox, not in Windows NT/XP's DOS box.

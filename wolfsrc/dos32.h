@@ -59,6 +59,8 @@ char *ltoa (long value, char *string, int radix);		// Borland's
 char *ultoa (unsigned long value, char *string, int radix);
 
 void DOS32_Startup (void);		// near pointers on, or Quit
+void DOS32_Mark (char *what);		// -timing: STARTUP.TXT
+void DOS32_WriteMarks (void);
 long DOS32_MemoryFree (void);	// bytes the DPMI host can still give us
 
 #endif

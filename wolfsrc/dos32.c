@@ -25,6 +25,49 @@ static boolean	dos32started;
 /*
 =================
 =
+= DOS32_Mark / DOS32_WriteMarks
+=
+= -timing: how long each part of the startup took, in STARTUP.TXT
+=
+=================
+*/
+
+static	boolean	timing;
+static	int		nummarks;
+static	char	*marknames[32];
+static	long	marktimes[32];
+
+void DOS32_Mark (char *what)
+{
+	if (!timing || nummarks == 32)
+		return;
+	marknames[nummarks] = what;
+	marktimes[nummarks] = _farpeekl (_dos_ds,0x46c);	// 18.2 per second
+	nummarks++;
+}
+
+void DOS32_WriteMarks (void)
+{
+	FILE	*f;
+	int		i;
+
+	if (!timing || !nummarks)
+		return;
+	f = fopen ("STARTUP.TXT","w");
+	if (!f)
+		return;
+	fprintf (f,"Seconds since main() started:\n");
+	for (i=0;i<nummarks;i++)
+		fprintf (f,"%7.2f  %s\n",(marktimes[i]-marktimes[0])/18.2065,marknames[i]);
+	fprintf (f,"DPMI memory free: %ld KB\n",DOS32_MemoryFree ()/1024);
+	fclose (f);
+	nummarks = 0;
+}
+
+
+/*
+=================
+=
 = DOS32_MemoryFree
 =
 = Bytes the DPMI host can still give us (physical memory, as virtual
@@ -90,6 +133,13 @@ static void DOS32_Fault (int sig)
 
 void DOS32_Startup (void)
 {
+	{
+		int i;
+		for (i=1;i<_argc;i++)
+			if (!stricmp (_argv[i],"-timing"))
+				timing = true;
+		DOS32_Mark ("main");
+	}
 	if (dos32started)
 		return;
 
