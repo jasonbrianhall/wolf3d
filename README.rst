@@ -22,9 +22,11 @@ Activision, as sold on Steam and GOG), ``wl6apo`` (1.4 Apogee),
 demo, make ``spear.exe``). It uses ``i586-pc-msdosdjgpp-gcc`` if it's on
 the PATH, the ``djfdyuruiry/djgpp`` Docker image otherwise.
 
-There's no memory scan at startup: memory is plain ``malloc`` and the
-page file is read into memory once, so the conventional / EMS / XMS
-probing and paging are gone. The assembly (raycaster, compiled scalers,
+There's no memory check at startup at all: memory is plain ``malloc``
+(a machine without enough gets "Out of memory"), the page file is read
+into memory once, and the signon screen's gauges just show full, so the
+conventional / EMS / XMS probing and paging are gone and nothing asks
+the DPMI host how much memory there is. The assembly (raycaster, compiled scalers,
 sound interrupt handlers, decompressors) is C. The hardware is driven as
 before: mode X VGA, keyboard and timer interrupts, PC speaker, AdLib,
 Sound Blaster (``BLASTER=``) and Sound Source. ``CONFIG`` files are

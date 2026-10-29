@@ -59,7 +59,6 @@ void DOS32_WriteMarks (void)
 	fprintf (f,"Seconds since main() started:\n");
 	for (i=0;i<nummarks;i++)
 		fprintf (f,"%7.2f  %s\n",(marktimes[i]-marktimes[0])/18.2065,marknames[i]);
-	fprintf (f,"DPMI memory free: %ld KB\n",DOS32_MemoryFree ()/1024);
 	fclose (f);
 	nummarks = 0;
 }
@@ -70,30 +69,19 @@ void DOS32_WriteMarks (void)
 =
 = DOS32_MemoryFree
 =
-= Bytes the DPMI host can still give us (physical memory, as virtual
-= memory would be no good to the interrupt handlers anyway)
+= What the signon screen's memory gauges and the old 640K checks are
+= told. The memory isn't checked at all (that's what made the original
+= crawl on big machines): memory comes from malloc as needed, and a
+= machine without enough for the game gets "Out of memory" from it.
 =
 =================
 */
 
+#define REPORTEDMEMORY	(16L*1024*1024)
+
 long DOS32_MemoryFree (void)
 {
-	__dpmi_free_mem_info	info;
-	unsigned long			pages;
-
-	if (__dpmi_get_free_memory_information (&info))
-		return 4L*1024*1024;
-
-	pages = info.total_number_of_free_pages;
-	if (pages == 0xfffffffful)
-	{
-		if (info.largest_available_free_block_in_bytes == 0xfffffffful)
-			return 4L*1024*1024;
-		return info.largest_available_free_block_in_bytes;
-	}
-	if (pages > 0x7ffff)
-		pages = 0x7ffff;
-	return pages*4096;
+	return REPORTEDMEMORY;
 }
 
 
