@@ -296,11 +296,13 @@ void VL_SetSplitScreen (int linenum)
 
 void VL_WaitVBL (int vbls)
 {
+	long	n;
+
 	while (vbls-- > 0)
 	{
-		while (inportb (STATUS_REGISTER_1) & 8)
+		for (n=0 ; n<200000L && (inportb (STATUS_REGISTER_1) & 8) ; n++)
 			;
-		while (!(inportb (STATUS_REGISTER_1) & 8))
+		for (n=0 ; n<200000L && !(inportb (STATUS_REGISTER_1) & 8) ; n++)
 			;
 	}
 }
@@ -338,54 +340,45 @@ void VL_SetCRTC (int crtc)
 =
 = VL_SetScreen
 =
-= Sets the display start address and the pel panning during a horizontal
-= blank that isn't part of a vertical blank, so both take effect on the
-= same frame. If an interrupt covers the whole retrace period (TimeCount
-= goes up by two), it gives up waiting.
+= Sets the display start address and the pel panning so both take effect
+= on the same frame: the CRTC latches the start address when the vertical
+= retrace begins, so it's written during the display, and the panning is
+= written once the retrace has started.
+=
+= id's code hunted for a horizontal blank instead, and gave up only when
+= TimeCount moved on. That needs several port reads inside one horizontal
+= blank, which DOSBox and QEMU manage but a real VGA (slower port reads)
+= often doesn't, and before the timer interrupt is installed (the signon
+= screen) TimeCount doesn't move: the signon took many seconds on real
+= hardware. Every wait here is bounded by a count, not by the timer.
 =
 ====================
 */
 
+#define VGAWAITMAX	200000L			// port reads: well over a frame
+
 void VL_SetScreen (int crtc, int pel)
 {
-	longword	limit;
-	int			i,status;
+	long	n;
 
-	limit = TimeCount+2;
+	for (n=0 ; n<VGAWAITMAX && (inportb (STATUS_REGISTER_1) & 8) ; n++)
+		;							// out of any retrace in progress
 
-waitdisplay:
-	while (inportb (STATUS_REGISTER_1) & 1)	// 1 = display is disabled (HBL / VBL)
-		;
-
-	for (;;)
 	{
-		enable ();
-		disable ();
-
-		if (TimeCount >= limit)			// will only happen if an interrupt is
-			break;						// straddling the entire retrace period
-
-		for (i=0;i<5;i++)
-		{
-			status = inportb (STATUS_REGISTER_1);
-			if (status & 8)
-				goto waitdisplay;		// vertical retrace: too late
-			if (!(status & 1))
-				break;					// display on, not a horizontal blank
-		}
-		if (i == 5)
-			break;						// steadily in a horizontal blank
-	}
-
+	DISABLE();
 	outportb (CRTC_INDEX,CRTC_STARTHIGH);
 	outportb (CRTC_INDEX+1,(crtc>>8)&0xff);
 	outportb (CRTC_INDEX,CRTC_STARTLOW);
 	outportb (CRTC_INDEX+1,crtc&0xff);
+	RESTORE();
+	}
 
+	for (n=0 ; n<VGAWAITMAX && !(inportb (STATUS_REGISTER_1) & 8) ; n++)
+		;							// the new address is in use from here
+
+	inportb (STATUS_REGISTER_1);	// attribute controller to its index
 	outportb (ATR_INDEX,ATR_PELPAN | 0x20);
 	outportb (ATR_INDEX,pel);
-
-	enable ();
 }
 
 
