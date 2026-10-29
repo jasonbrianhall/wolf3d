@@ -30,6 +30,13 @@ before: mode X VGA, keyboard and timer interrupts, PC speaker, AdLib,
 Sound Blaster (``BLASTER=``) and Sound Source. ``CONFIG`` files are
 shared with the original; saved games are not.
 
+``make setup`` builds ``setup.exe`` and ``ipxsetup.exe`` (one program
+for every version: it finds the data in the current directory). SETUP
+edits the ``CONFIG`` file in blue DOS screens: sound, keys, mouse,
+joystick, view size. IPXSETUP opens on the co-op menu (players,
+episode, level, skill, friendly fire) and runs the game; with options
+(``ipxsetup -nodes 3 -level 2``) it runs it straight away.
+
 Co-op over IPX for 2 to 4 players: every player starts the game with
 an IPX driver loaded (DOSBox: ``ipx=true``, then ``IPXNET STARTSERVER``
 on one and ``IPXNET CONNECT <address>`` on the others)::

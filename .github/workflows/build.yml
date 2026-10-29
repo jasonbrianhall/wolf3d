@@ -38,12 +38,15 @@ jobs:
       - name: Build wolf3d.exe / spear.exe (embedded CWSDPMI)
         run: |
           mkdir -p release
+          make DOCKER=1 setup
           for v in wl6 wl6apo wl1 sod sdm; do
             case $v in sod|sdm) exe=spear.exe ;; *) exe=wolf3d.exe ;; esac
             make DOCKER=1 VERSION=$v msdos_embedded
             dir=release/$(echo $v | tr a-z A-Z)
             mkdir -p $dir
             cp $exe $dir/$(echo $exe | tr a-z A-Z)
+            cp setup.exe $dir/SETUP.EXE
+            cp ipxsetup.exe $dir/IPXSETUP.EXE
             ls -la $dir
           done
 
@@ -88,6 +91,10 @@ jobs:
                      the menus, e.g. -music off -sfx pc -digi off, and are
                      saved when you quit; -defaults ignores the CONFIG file.
                      nowait, nomouse, nojoys, noal, nosb as in the original.
+          Setup:     SETUP.EXE sets sound, keys, mouse, joystick and view
+                     size (it writes the CONFIG file). IPXSETUP.EXE is the
+                     co-op menu: players, episode, level, skill, friendly
+                     fire. IPXSETUP -nodes 3 ... skips the menu.
           Co-op:     IPX, 2 to 4 players. Everyone runs, with an IPX driver
                      loaded (in DOSBox: ipx=true, then IPXNET STARTSERVER on
                      one machine and IPXNET CONNECT <address> on the others):
