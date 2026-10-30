@@ -75,6 +75,13 @@ Blazkowicz Sprites" (Python 3 with Pillow, NumPy and SciPy)::
 
   python3 msdos/mkplayers.py bj_sheet.png PLAYERS.WL6 --preview check.png
 
+A player coming back makes Doom's teleport sound when Doom is around:
+it's read from your own ``DOOM2.WAD``, ``DOOM.WAD``, ``PLUTONIA.WAD``,
+``TNT.WAD``, ``DOOM1.WAD`` or Freedoom WAD in the game's directory, or
+the file ``-doomwad <file>`` names (nothing of Doom's is included).
+Without one it's an effect of our own. Both need a digitized sound
+device; with none, it's the extra life sound.
+
 Sounds fade with distance: past 8 tiles (where the original tables level
 off at about half volume) the volume halves every 8 tiles, and a sound
 over about 40 tiles away isn't played. That's on the Sound Blaster Pro

@@ -130,6 +130,7 @@ volatile long			LocalTime;
 volatile boolean		DigiPlaying;
 static	volatile boolean	DigiMissed,DigiLastSegment;
 static	memptr volatile	DigiNextAddr;
+static	byte		*DigiRaw;		// SD_PlaySample's buffer (else the page file)
 static	volatile word	DigiNextLen;
 
 //	SoundBlaster variables
@@ -1024,6 +1025,9 @@ asm	mov	al,10	// bright green
 asm	out	dx,al
 #endif
 
+	if (DigiRaw)
+		return(DigiRaw + (longword)page * PMPageSize);
+
 	addr = PM_GetSoundPage(page);
 	PM_SetPageLock(PMSoundStart + page,pml_Locked);
 
@@ -1155,6 +1159,7 @@ SD_PlayDigitized(word which,int leftpos,int rightpos)
 		return;
 
 	SD_StopDigitized();
+	DigiRaw = nil;
 	if (which >= NumDigi)
 		Quit("SD_PlayDigitized: bad sound number");
 
@@ -2000,6 +2005,79 @@ SD_PositionSound(int leftvol,int rightvol)
 	LeftPosition = leftvol;
 	RightPosition = rightvol;
 	nextsoundpos = true;
+}
+
+///////////////////////////////////////////////////////////////////////////
+//
+//	SD_PlaySample() - plays a digitized sound from memory (8 bit unsigned,
+//		7042 Hz, like the page file's) at the given priority, positioned
+//		if SD_PositionSound() was called. Not played (false) without a
+//		digitized sound device. The data must stay until it's done.
+//
+///////////////////////////////////////////////////////////////////////////
+boolean
+SD_PlaySample(byte *data,longword len,word priority)
+{
+	boolean	ispos;
+	int		lp,rp;
+	word	seglen;
+	memptr	addr;
+
+	lp = LeftPosition;
+	rp = RightPosition;
+	LeftPosition = 0;
+	RightPosition = 0;
+	ispos = nextsoundpos;
+	nextsoundpos = false;
+
+	if (DigiMode == sds_Off || !data || !len)
+		return(false);
+	if (len > 0xffff)
+		len = 0xffff;				// DigiLeft is a word
+
+	if ((DigiMode == sds_PC) && (SoundMode == sdm_PC))
+	{
+		if (priority < SoundPriority)
+			return(false);
+		SDL_PCStopSound();
+	}
+	else if (priority < DigiPriority)
+		return(false);
+
+	SD_StopDigitized();
+	SD_SetPosition(lp,rp);
+
+	DigiRaw = data;
+	DigiPage = 0;
+	DigiLeft = len;
+	DigiLastStart = 1;				// no pages to unlock
+	DigiLastEnd = 0;
+
+	seglen = (DigiLeft >= PMPageSize)? PMPageSize : DigiLeft;
+	addr = SDL_LoadDigiSegment(DigiPage++);
+
+	DigiPlaying = true;
+	DigiLastSegment = false;
+
+	SDL_PlayDigiSegment(addr,seglen);
+	DigiLeft -= seglen;
+	if (!DigiLeft)
+		DigiLastSegment = true;
+
+	SoundPositioned = ispos;
+	if ((DigiMode == sds_PC) && (SoundMode == sdm_PC))
+	{
+		SoundNumber = LASTSOUND;	// not one of the game's
+		SoundPriority = priority;
+	}
+	else
+	{
+		DigiNumber = LASTSOUND;
+		DigiPriority = priority;
+	}
+
+	SD_Poll();
+	return(true);
 }
 
 ///////////////////////////////////////////////////////////////////////////

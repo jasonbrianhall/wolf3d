@@ -407,6 +407,180 @@ void NetKillPlayer (objtype *attacker)
 	}
 }
 
+/*
+-----------------------------------------------------------------------------
+
+ THE RESPAWN SOUND
+
+ Doom's teleport sound (DSTELEPT) when the player has Doom: it's read from
+ their own DOOM2.WAD / DOOM.WAD / ... in the current directory, or the one
+ -doomwad <file> names. Nothing of Doom's is in this program. Without one,
+ an effect of our own is made: a rising shimmer over a burst of noise.
+ Either is a digitized sound; with no digitized sound device the extra
+ life sound is played instead.
+
+-----------------------------------------------------------------------------
+*/
+
+#define RSRATE		7042		// the game's digitized sounds
+#define RSPRIORITY	40
+
+static	boolean	rstried;
+static	byte	*rsdata;
+static	long	rslen;
+
+static long GetLong (byte *p)
+{
+	return p[0] | (p[1]<<8) | ((long)p[2]<<16) | ((long)p[3]<<24);
+}
+
+// DSTELEPT from a Doom WAD, resampled to RSRATE; false if there isn't one
+static boolean LoadDoomTeleport (char *name)
+{
+	FILE	*f;
+	byte	hdr[12],ent[16],*lump,*out;
+	long	numlumps,dirofs,i,pos,size,rate,count,outlen,j,frac;
+
+	if (!(f = fopen (name,"rb")))
+		return false;
+	if (fread (hdr,1,12,f) != 12 || (memcmp (hdr,"IWAD",4) && memcmp (hdr,"PWAD",4)))
+	{
+		fclose (f);
+		return false;
+	}
+	numlumps = GetLong (hdr+4);
+	dirofs = GetLong (hdr+8);
+	if (numlumps <= 0 || numlumps > 65536 || fseek (f,dirofs,SEEK_SET))
+	{
+		fclose (f);
+		return false;
+	}
+	pos = size = -1;
+	for (i=0;i<numlumps;i++)
+	{
+		if (fread (ent,1,16,f) != 16)
+			break;
+		if (!strncmp ((char *)ent+8,"DSTELEPT",8))
+		{
+			pos = GetLong (ent);
+			size = GetLong (ent+4);			// the last one wins, as in Doom
+		}
+	}
+	if (pos < 0 || size < 8 || size > 0x40000 || !(lump = malloc (size)))
+	{
+		fclose (f);
+		return false;
+	}
+	if (fseek (f,pos,SEEK_SET) || fread (lump,1,size,f) != size)
+	{
+		free (lump);
+		fclose (f);
+		return false;
+	}
+	fclose (f);
+
+	// format 3: word 3, word rate, long count, count 8 bit unsigned samples,
+	// the first and last 16 of them padding
+	rate = lump[2] | (lump[3]<<8);
+	count = GetLong (lump+4);
+	if ((lump[0] | (lump[1]<<8)) != 3 || rate < 4000 || rate > 48000
+	|| count <= 32 || count > size-8)		// (no overflow with 32 bit longs)
+	{
+		free (lump);
+		return false;
+	}
+	count -= 32;
+	outlen = count * RSRATE / rate;
+	if (outlen < 1 || !(out = malloc (outlen)))
+	{
+		free (lump);
+		return false;
+	}
+	for (i=0;i<outlen;i++)
+	{
+		pos = i * rate / RSRATE;			// linear interpolation
+		frac = (i * rate % RSRATE) * 256 / RSRATE;
+		j = pos+1 < count ? pos+1 : pos;
+		out[i] = (lump[8+16+pos]*(256-frac) + lump[8+16+j]*frac) >> 8;
+	}
+	free (lump);
+	rsdata = out;
+	rslen = outlen;
+	return true;
+}
+
+// our own: 0.6 s, a tone sweeping up with a fast warble, over noise that
+// dies away, faded in and out
+static void MakeTeleportSound (void)
+{
+	long	i,n;
+	unsigned long seed = 0x1234567;		// not the game's random numbers
+	double	t,phase,freq,env,noise,lp,v;
+
+	n = RSRATE * 6 / 10;
+	if (!(rsdata = malloc (n)))
+		return;
+	phase = lp = 0;
+	for (i=0;i<n;i++)
+	{
+		t = (double)i / n;
+		freq = 220 + 1500*t*t + 90*sin (2*3.14159265*38*t);
+		phase += 2*3.14159265*freq / RSRATE;
+		seed = seed*1103515245 + 12345;
+		noise = ((seed >> 16) & 0xffff) / 32768.0 - 1;
+		lp += (noise - lp) * (0.15 + 0.6*t);		// brighter as it rises
+		env = (t < 0.08 ? t/0.08 : 1) * (1-t) * (1-t);
+		v = (0.55*sin (phase) + 0.45*sin (phase*2.01)*t + 0.7*lp*(1-t)) * env;
+		v = 128 + v*170;
+		rsdata[i] = v < 0 ? 0 : v > 255 ? 255 : (byte)v;
+	}
+	rslen = n;
+}
+
+static void LoadRespawnSound (void)
+{
+	static char *wads[] = {"DOOM2.WAD","DOOM.WAD","PLUTONIA.WAD","TNT.WAD",
+		"DOOMU.WAD","FREEDOOM2.WAD","FREEDOOM1.WAD","DOOM1.WAD",NULL};
+	int		i;
+
+	rstried = true;
+	for (i=1;i<_argc-1;i++)
+		if (!stricmp (_argv[i],"-doomwad") && LoadDoomTeleport (_argv[i+1]))
+			return;
+	for (i=0;wads[i];i++)
+		if (LoadDoomTeleport (wads[i]))
+			return;
+	MakeTeleportSound ();
+}
+
+// from Respawn: everyone hears it, from where the player comes back
+static void RespawnSound (objtype *ob)
+{
+	if (!rstried)
+		LoadRespawnSound ();
+
+	if (netcontext != localplayer)
+	{
+		SetSoundLoc (ob->x,ob->y);
+		if (soundinaudible)
+			return;
+		SD_PositionSound (leftchannel,rightchannel);
+	}
+	if (DigiMode == sds_Off)
+	{
+		// nothing digitized: the next best thing
+		if (netcontext != localplayer)
+			PlaySoundLocGlobal (BONUS1UPSND,ob->x,ob->y);
+		else
+			SD_PlaySound (BONUS1UPSND);
+	}
+	else if (SD_PlaySample (rsdata,rslen,RSPRIORITY) && netcontext != localplayer)
+	{
+		globalsoundx = ob->x;			// UpdateSoundLoc keeps it placed
+		globalsoundy = ob->y;
+	}
+}
+
 static void Respawn (netplayer_t *p)
 {
 	objtype	*ob = p->ob;
@@ -427,6 +601,7 @@ static void Respawn (netplayer_t *p)
 	plux = ob->x >> UNSIGNEDSHIFT;
 	pluy = ob->y >> UNSIGNEDSHIFT;
 	ConnectAreas ();
+	RespawnSound (ob);
 
 	DrawHealth ();
 	DrawFace ();
@@ -1885,6 +2060,9 @@ void NetLevelStart (void)
 	unsigned area;
 	objtype	*p0;
 	static int dx[4] = {1,0,-1,0}, dy[4] = {0,-1,0,1};
+
+	if (!rstried)
+		LoadRespawnSound ();	// now, not in the middle of a fight
 
 	player = np[netcontext].ob;
 	p0 = playerobjs[0];
