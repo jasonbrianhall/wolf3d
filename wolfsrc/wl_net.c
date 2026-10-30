@@ -412,9 +412,10 @@ void NetKillPlayer (objtype *attacker)
 
  THE RESPAWN SOUND
 
- Doom's teleport sound (DSTELEPT) when the player has Doom: it's read from
- their own DOOM2.WAD / DOOM.WAD / ... in the current directory, or the one
- -doomwad <file> names. Nothing of Doom's is in this program. Without one,
+ A teleport sound (DSTELEPT), read from the WAD -doomwad <file> names,
+ else RESPAWN.WAD (Freedoom's, which comes with the game: FREEDOOM.TXT),
+ else the player's own DOOM2.WAD / DOOM.WAD / ... in the current
+ directory. Nothing of Doom's is in this program. Without any of them,
  an effect of our own is made: a rising shimmer over a burst of noise.
  Either is a digitized sound; with no digitized sound device the extra
  life sound is played instead.
@@ -539,7 +540,7 @@ static void MakeTeleportSound (void)
 
 static void LoadRespawnSound (void)
 {
-	static char *wads[] = {"DOOM2.WAD","DOOM.WAD","PLUTONIA.WAD","TNT.WAD",
+	static char *wads[] = {"RESPAWN.WAD","DOOM2.WAD","DOOM.WAD","PLUTONIA.WAD","TNT.WAD",
 		"DOOMU.WAD","FREEDOOM2.WAD","FREEDOOM1.WAD","DOOM1.WAD",NULL};
 	int		i;
 

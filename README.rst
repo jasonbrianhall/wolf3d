@@ -67,19 +67,21 @@ bar, menus and full screen pictures stay 320 wide in the middle, with
 black or matching sides. ``-vesa 848x480`` picks the mode, ``-vesabits``
 its depth. Without a wide VESA mode it stays in the normal VGA mode.
 
-``PLAYERS.WL6`` (``PLAYERS.WL1``, ``.SOD``... for the other data: the
-same file renamed) holds BJ in eight directions standing, walking,
+``msdos/PLAYERS.WL6`` (copy it next to the exe as ``PLAYERS.WL1``,
+``.SOD``... for the other data; the release zip has it named for each)
+holds BJ in eight directions standing, walking,
 aiming and firing, with pain and death frames. ``msdos/mkplayers.py``
 makes it from a sprite sheet laid out like AndersonMiguel1105's "New BJ
 Blazkowicz Sprites" (Python 3 with Pillow, NumPy and SciPy)::
 
   python3 msdos/mkplayers.py bj_sheet.png PLAYERS.WL6 --preview check.png
 
-A player coming back makes Doom's teleport sound when Doom is around:
-it's read from your own ``DOOM2.WAD``, ``DOOM.WAD``, ``PLUTONIA.WAD``,
-``TNT.WAD``, ``DOOM1.WAD`` or Freedoom WAD in the game's directory, or
-the file ``-doomwad <file>`` names (nothing of Doom's is included).
-Without one it's an effect of our own. Both need a digitized sound
+A player coming back makes a teleport sound: Freedoom's, from
+``msdos/RESPAWN.WAD`` next to the exe (its license: ``FREEDOOM.TXT``;
+both are in the release zip). ``-doomwad <file>`` takes it from another
+WAD instead, such as your own ``DOOM2.WAD``; without ``RESPAWN.WAD`` a
+Doom WAD in the game's directory is used, and without any it's an
+effect of our own. Both need a digitized sound
 device; with none, it's the extra life sound.
 
 Sounds fade with distance: past 8 tiles (where the original tables level

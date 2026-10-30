@@ -47,6 +47,12 @@ jobs:
             cp $exe $dir/$(echo $exe | tr a-z A-Z)
             cp setup.exe $dir/SETUP.EXE
             cp ipxsetup.exe $dir/IPXSETUP.EXE
+            # co-op: the other players' sprites (named for the data:
+            # PLAYERS.WL6 / .WL1 / .SOD / .SDM) and the respawn sound
+            case $v in wl6apo) ext=WL6 ;; *) ext=$(echo $v | tr a-z A-Z) ;; esac
+            cp PLAYERS.WL6 $dir/PLAYERS.$ext
+            cp RESPAWN.WAD $dir/RESPAWN.WAD
+            cp FREEDOOM.TXT $dir/FREEDOOM.TXT
             ls -la $dir
           done
 
@@ -108,6 +114,10 @@ jobs:
                        WOLF3D -nodes 2 [-episode 1] [-level 1] [-skill 2]
                      Player 1's episode/level/skill are used. Dead players
                      come back at the level start; keys are shared.
+                     The other players are BJ (PLAYERS.* next to the exe;
+                     without it, recolored SS guards). The respawn sound is
+                     RESPAWN.WAD, Freedoom's teleport sound (FREEDOOM.TXT);
+                     -doomwad <file> takes it from another WAD.
                      Friendly fire is on unless -nofriendlyfire.
                      Esc leaves the game. T: chat (Enter sends); while
                      typing, Alt+1..Alt+0 send the macros SETUP edits.
