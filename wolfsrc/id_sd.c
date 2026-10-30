@@ -112,6 +112,7 @@ void	GUS_Shutdown (void);
 void	GUS_Service (void);
 void	GUS_AdLibWrite (int reg, int val);
 void	GUS_PlaySample (byte *data, longword len);
+void	GUS_SetVolume (int leftpos, int rightpos);
 void	GUS_StopSample (void);
 static	void			(*SoundUserHook)(void);
 volatile soundnames		SoundNumber,DigiNumber;
@@ -1136,7 +1137,10 @@ SD_SetPosition(int leftpos,int rightpos)
 	switch (DigiMode)
 	{
 	case sds_SoundBlaster:
-		SDL_PositionSBP(leftpos,rightpos);
+		if (GUSPresent)
+			GUS_SetVolume(leftpos,rightpos);
+		else
+			SDL_PositionSBP(leftpos,rightpos);
 		break;
 	}
 }
@@ -1988,6 +1992,8 @@ SD_SetUserHook(void (* hook)(void))
 //		sound to be played. Each channel ranges from 0 to 15.
 //
 ///////////////////////////////////////////////////////////////////////////
+int		(*SD_PlayHook) (soundnames sound);
+
 void
 SD_PositionSound(int leftvol,int rightvol)
 {
@@ -2007,6 +2013,15 @@ SD_PlaySound(soundnames sound)
 	boolean		ispos;
 	SoundCommon	*s;
 	int	lp,rp;
+
+	// an unpositioned sound the game may want to place (wl_net.c: one
+	// another player made); the hook plays it positioned, or returns -1
+	if (!nextsoundpos && SD_PlayHook)
+	{
+		int	r = SD_PlayHook (sound);
+		if (r >= 0)
+			return r;
+	}
 
 	lp = LeftPosition;
 	rp = RightPosition;

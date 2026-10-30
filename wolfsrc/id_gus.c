@@ -33,6 +33,7 @@ static	byte * volatile	digiptr;
 static	volatile longword	digilen;
 static	longword	digipos;		// 16.16
 static	longword	digistep;
+static	volatile int	digivol = 16;	// 0..16: SD_SetPosition's distance (mono)
 
 static	int32_t		oplbuf[CHUNK];
 
@@ -225,6 +226,18 @@ void GUS_PlaySample (byte *data, longword len)
 	RESTORE();
 }
 
+/*
+= GUS_SetVolume: from SD_SetPosition (0 loudest .. 15 silent per side);
+= the stream is mono, so the louder side sets it
+*/
+
+void GUS_SetVolume (int leftpos, int rightpos)
+{
+	int pos = leftpos < rightpos ? leftpos : rightpos;
+
+	digivol = ((15 - pos) * 16 + 7) / 15;
+}
+
 void GUS_StopSample (void)
 {
 	DISABLE();
@@ -274,7 +287,7 @@ void GUS_Service (void)
 
 			if (digiptr)
 			{
-				s += ((int)digiptr[digipos >> 16] - 128) << 8;
+				s += (((int)digiptr[digipos >> 16] - 128) * digivol) << 4;
 				digipos += digistep;
 				if ((digipos >> 16) >= digilen)
 				{

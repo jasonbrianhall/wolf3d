@@ -489,8 +489,42 @@ static void NetPickups (objtype *ob)
 			for (i=0;i<numplayers;i++)
 				if (i != netcontext)
 					np[i].keys |= gamestate.keys;
+
+			// and show up on our status bar, whoever picked them up
+			// (DrawKeys draws only for the local player's context)
+			if (netcontext != localplayer)
+			{
+				i = netcontext;
+				NetSetContext (localplayer);
+				DrawKeys ();
+				NetSetContext (i);
+			}
 		}
 	}
+}
+
+
+/*
+===================
+=
+= NetPlaySound
+=
+= SD_PlayHook: the game plays a player's own sounds (shots, pickups, the
+= locked door, a pushwall...) unpositioned, which is right for the local
+= player but put everybody else's at full volume in our ears, however
+= far away they were. Those are played from where that player is, so
+= they get quieter with distance (SetSoundLoc) like the actors' sounds.
+= Anything else (the bosses' voices, the menus) is left alone: -1.
+=
+===================
+*/
+
+static int NetPlaySound (soundnames s)
+{
+	if (!netgame || netcontext == localplayer || !player || obj != player)
+		return -1;
+	PlaySoundLocGlobal (s,player->x,player->y);
+	return 0;
 }
 
 
@@ -583,10 +617,11 @@ static boolean SpawnSpotClear (netplayer_t *p)
 
 						 HOW THE OTHERS LOOK
 
-The other players are drawn with the SS sprites (eight directions, a gun,
-walking, shooting, pain and death frames), recolored so the uniform is a
-different color for each player and nobody takes them for an enemy.
-The copies are made from the game's own data when first needed.
+The other players are drawn with BJ from PLAYERS.WL6 when it's there,
+otherwise with the SS sprites (eight directions, a gun, walking,
+shooting, pain and death frames). Either way they're recolored (BJ's
+vest, the SS's uniform) so each player has a color and nobody takes
+them for an enemy. The copies are made when first needed.
 
 =============================================================================
 */
@@ -596,6 +631,138 @@ The copies are made from the game's own data when first needed.
 static	byte	*netshapes[MAXPLAYERS][NUMSSFRAMES];
 static	byte	netcolors[MAXPLAYERS][256];
 static	boolean	netcolorsmade;
+
+/*
+-----------------------------------------------------------------------------
+
+ PLAYERS.WL6 (PLAYERS.<the data's extension>), made by msdos/mkplayers.py
+ from a sprite sheet: BJ in 8 directions standing, walking, aiming and
+ firing, plus pain and death frames. When it's there the other players
+ are drawn with it instead of the SS; its team[] colors (the vest) are
+ the ones recolored per player.
+
+	char	magic[4]	"WLPS"
+	word	version		1
+	word	numframes
+	byte	team[256]
+	long	offset[numframes], word length[numframes]
+	...		frames, t_compshape like VSWAP's sprites
+
+ The scaler doesn't check what it reads, so every frame is checked here.
+
+-----------------------------------------------------------------------------
+*/
+
+#define PF_STAND	0			// + direction
+#define PF_WALK		8			// + walk frame*8 + direction
+#define PF_AIM		40			// + direction
+#define PF_FIRE		48			// + direction
+#define PF_PAIN		56
+#define PF_DIE1		57			// 57-60
+#define PF_DEAD		61
+#define PF_NUM		62
+
+#define PFFRAME		0x3c0		// frame numbers above every sprite's: the file's
+
+static	boolean	pftried,pfloaded;
+static	byte	*pfdata;
+static	byte	*pfframe[PF_NUM];
+static	word	pflength[PF_NUM];
+static	byte	pfteam[256];
+static	byte	*pfshapes[MAXPLAYERS][PF_NUM];
+
+static word GetWord (byte *p)
+{
+	return p[0] | (p[1]<<8);
+}
+
+static boolean CheckFrame (byte *f, unsigned len)
+{
+	unsigned	left,right,col,ofs,end,top,start;
+
+	if (len < 6)
+		return false;
+	left = GetWord (f);
+	right = GetWord (f+2);
+	if (left > right || right > 63 || 4+2*(right-left+1) > len)
+		return false;
+	for (col=0 ; col <= right-left ; col++)
+	{
+		ofs = GetWord (f+4+col*2);
+		for (;;)
+		{
+			if (ofs+2 > len)
+				return false;
+			end = GetWord (f+ofs);
+			if (!end)
+				break;
+			if (ofs+6 > len)
+				return false;
+			top = GetWord (f+ofs+2);
+			start = GetWord (f+ofs+4);
+			if ((end|start)&1 || start >= end || end > 128
+			|| (word)(top+start/2) >= len || (word)(top+end/2) > len
+			|| (word)(top+start/2) > (word)(top+end/2))
+				return false;
+			ofs += 6;
+		}
+	}
+	return true;
+}
+
+static void LoadPlayerSprites (void)
+{
+	char	fname[16];
+	FILE	*f;
+	long	size,ofs;
+	unsigned len;
+	int		i,n;
+
+	pftried = true;
+	strcpy (fname,"PLAYERS.");
+	strcat (fname,extension);
+	f = fopen (fname,"rb");
+	if (!f)
+		return;
+	fseek (f,0,SEEK_END);
+	size = ftell (f);
+	fseek (f,0,SEEK_SET);
+	if (size < 8+256 || size > 0x100000 || !(pfdata = malloc (size)))
+	{
+		fclose (f);
+		return;
+	}
+	if (fread (pfdata,1,size,f) != size)
+		size = 0;
+	fclose (f);
+
+	n = size ? GetWord (pfdata+6) : 0;
+	if (memcmp (pfdata,"WLPS",4) || GetWord (pfdata+4) != 1 || n < PF_NUM
+	|| 8+256+n*6 > size)
+		goto bad;
+	memcpy (pfteam,pfdata+8,256);
+	for (i=0;i<PF_NUM;i++)
+	{
+		byte *t = pfdata+8+256+i*4;
+		ofs = t[0] | (t[1]<<8) | ((long)t[2]<<16) | ((long)t[3]<<24);
+		len = GetWord (pfdata+8+256+n*4+i*2);
+		if (ofs < 0 || ofs+len > size || !CheckFrame (pfdata+ofs,len))
+			goto bad;
+		pfframe[i] = pfdata+ofs;
+		pflength[i] = len;
+	}
+	pfloaded = true;
+	return;
+
+bad:
+	free (pfdata);
+	pfdata = NULL;
+	{
+		char str[40];
+		sprintf (str,"%s is damaged: SS used",fname);
+		AddChatLine (str,7);
+	}
+}
 
 static void MakeColors (void)
 {
@@ -607,19 +774,37 @@ static void MakeColors (void)
 		{
 			netcolors[p][c] = c;
 			r = pal[c*3]; g = pal[c*3+1]; b = pal[c*3+2];
-			if (b < r+4 || b < g+4)
-				continue;			// only the blue of the uniform
-			switch (p)
+			if (pfloaded)
 			{
-			case 0: nr = r; ng = b; nb = g; break;			// green
-			case 1: nr = b; ng = g; nb = r; break;			// red
-			case 2: nr = b; ng = b*3/4; nb = r/2; break;	// gold
-			default: nr = ng = nb = (r+g+b*2)/3; break;		// white
+				// BJ's gold vest
+				if (!pfteam[c])
+					continue;
+				switch (p)
+				{
+				case 0: nr = b; ng = (r+g)/2; nb = b; break;		// green
+				case 1: nr = (r+g)/2; ng = b; nb = b; break;		// red
+				case 2: continue;									// gold
+				default: nr = ng = nb = (r+g)/2; break;				// white
+				}
+			}
+			else
+			{
+				if (b < r+4 || b < g+4)
+					continue;			// only the blue of the uniform
+				switch (p)
+				{
+				case 0: nr = r; ng = b; nb = g; break;			// green
+				case 1: nr = b; ng = g; nb = r; break;			// red
+				case 2: nr = b; ng = b*3/4; nb = r/2; break;	// gold
+				default: nr = ng = nb = (r+g+b*2)/3; break;		// white
+				}
 			}
 			best = c;
 			bestd = 0x7fffffff;
 			for (i=0;i<255;i++)
 			{
+				if (pfloaded && pfteam[i] && p != 2)
+					continue;			// not back to gold
 				dr = pal[i*3]-nr; dg = pal[i*3+1]-ng; db = pal[i*3+2]-nb;
 				d = dr*dr*3 + dg*dg*4 + db*db*2;
 				if (d < bestd)
@@ -633,33 +818,19 @@ static void MakeColors (void)
 	netcolorsmade = true;
 }
 
-memptr NetShape (int shapenum)
+// a copy of a shape with exactly the pixels the scaler reads recolored
+static byte *Recolor (byte *orig, unsigned length, int p)
 {
-	int		p,frame,page,col,src,end,start;
-	byte	*orig,*copy;
+	int		col,src,end,start;
+	byte	*copy;
 	word	*cmd,top;
 	t_compshape *shape;
 
-	p = (shapenum >> 10) & 3;
-	frame = shapenum & 0x3ff;
-	if (frame < SPR_SS_S_1 || frame > SPR_SS_SHOOT3)
-		return PM_GetSpritePage (frame);
-
-	copy = netshapes[p][frame-SPR_SS_S_1];
-	if (copy)
-		return copy;
-
-	if (!netcolorsmade)
-		MakeColors ();
-
-	page = PMSpriteStart + frame;
-	orig = PM_GetPage (page);
-	copy = malloc (PMPages[page].length);
+	copy = malloc (length);
 	if (!copy)
-		return orig;
-	memcpy (copy,orig,PMPages[page].length);
+		return NULL;
+	memcpy (copy,orig,length);
 
-	// recolor exactly the pixels the scaler reads
 	shape = (t_compshape *)orig;
 	for (col=0 ; col <= shape->rightpix-shape->leftpix ; col++)
 	{
@@ -673,7 +844,39 @@ memptr NetShape (int shapenum)
 			cmd += 3;
 		}
 	}
+	return copy;
+}
 
+memptr NetShape (int shapenum)
+{
+	int		p,frame,page;
+	byte	*copy;
+
+	p = (shapenum >> 10) & 3;
+	frame = shapenum & 0x3ff;
+
+	if (!netcolorsmade)
+		MakeColors ();
+
+	if (frame >= PFFRAME)
+	{
+		frame -= PFFRAME;
+		if (!pfshapes[p][frame])
+			pfshapes[p][frame] = Recolor (pfframe[frame],pflength[frame],p);
+		return pfshapes[p][frame] ? pfshapes[p][frame] : pfframe[frame];
+	}
+
+	if (frame < SPR_SS_S_1 || frame > SPR_SS_SHOOT3)
+		return PM_GetSpritePage (frame);
+
+	copy = netshapes[p][frame-SPR_SS_S_1];
+	if (copy)
+		return copy;
+
+	page = PMSpriteStart + frame;
+	copy = Recolor (PM_GetPage (page),PMPages[page].length,p);
+	if (!copy)
+		return PM_GetPage (page);
 	netshapes[p][frame-SPR_SS_S_1] = copy;
 	return copy;
 }
@@ -702,9 +905,14 @@ int NetPlayerShape (objtype *ob)
 		return 0;
 	p = &np[i];
 
+	if (!pftried)
+		LoadPlayerSprites ();
+
 	if (p->dead)
 	{
-		if (p->respawn < 8)
+		if (pfloaded)
+			frame = p->respawn < 24 ? PFFRAME+PF_DIE1+p->respawn/6 : PFFRAME+PF_DEAD;
+		else if (p->respawn < 8)
 			frame = SPR_SS_DIE_1;
 		else if (p->respawn < 16)
 			frame = SPR_SS_DIE_2;
@@ -725,6 +933,20 @@ int NetPlayerShape (objtype *ob)
 	angle /= ANGLES/8;
 
 	wf = i == netcontext ? gamestate.weaponframe : p->weaponframe;
+
+	if (pfloaded)
+	{
+		// BJ aims and fires in every direction, not only at us
+		if (p->pain)
+			frame = PF_PAIN;
+		else if (wf)
+			frame = (wf == 2 ? PF_FIRE : PF_AIM) + angle;
+		else if (p->moving)
+			frame = PF_WALK + ((p->anim >> 14) & 3)*8 + angle;
+		else
+			frame = PF_STAND + angle;
+		return NETSHAPEFLAG | (i<<10) | (PFFRAME+frame);
+	}
 
 	if (p->pain)
 		frame = SPR_SS_PAIN_1;
@@ -1452,6 +1674,7 @@ void NetStartup (void)
 
 	netgame = true;
 	numplayers = nodes;
+	SD_PlayHook = NetPlaySound;
 	for (i=1;i<_argc;i++)
 		if (!stricmp (_argv[i],"-netlog"))
 			netlog = fopen ("NETLOG.TXT","w");

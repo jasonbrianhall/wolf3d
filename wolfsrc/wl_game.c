@@ -109,17 +109,58 @@ byte lefttable[ATABLEMAX][ATABLEMAX * 2] = {
 { 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8}
 };
 
+/*
+= Beyond the tables (they level off at 8, about half volume, by 8 tiles
+= and stop at 15), a sound keeps getting quieter: the volume halves every
+= SOUNDHALFDIST tiles past SOUNDNEARDIST, until it can't be heard at all
+= (soundinaudible: PlaySoundLocGlobal doesn't play it).
+*/
+
+#define SOUNDNEARDIST	8			// tiles: where the tables level off
+#define SOUNDHALFDIST	8			// tiles: the volume halves every this far
+
+boolean	soundinaudible;
+
+static int SoundFalloff (int pos, long dist)
+{
+	long	over,steps,frac,scale,vol;
+
+	over = dist - ((long)SOUNDNEARDIST << TILESHIFT);
+	if (over <= 0)
+		return pos;
+
+	steps = over / ((long)SOUNDHALFDIST << TILESHIFT);
+	if (steps >= 8)
+		return 15;
+	frac = (over % ((long)SOUNDHALFDIST << TILESHIFT)) / SOUNDHALFDIST;	// 0..0xffff
+
+	// 256 >> steps, sliding down to the next half
+	scale = 256 >> steps;
+	scale -= ((scale >> 1) * (frac >> 8)) >> 8;
+
+	vol = ((15 - pos) * scale + 128) >> 8;
+	return 15 - (int)vol;
+}
+
 void
 SetSoundLoc(fixed gx,fixed gy)
 {
 	fixed	xt,yt;
 	int		x,y;
+	long	ax,ay,dist;
 
 //
 // translate point to view centered coordinates
 //
 	gx -= viewx;
 	gy -= viewy;
+
+//
+// how far: max + 3/8 min is within a few percent of the real distance
+//
+	ax = labs (gx);
+	ay = labs (gy);
+	dist = ax > ay ? ax + (ay*3>>3) : ay + (ax*3>>3);
 
 //
 // calculate newx
@@ -143,8 +184,14 @@ SetSoundLoc(fixed gx,fixed gy)
 		x = -x;
 	if (x >= ATABLEMAX)
 		x = ATABLEMAX - 1;
-	leftchannel  =  lefttable[x][y + ATABLEMAX];
-	rightchannel = righttable[x][y + ATABLEMAX];
+	leftchannel  = SoundFalloff (lefttable[x][y + ATABLEMAX],dist);
+	rightchannel = SoundFalloff (righttable[x][y + ATABLEMAX],dist);
+
+	// 15/15 is silence, which SD_SetPosition refuses: keep a playing
+	// sound barely there, and don't start a new one
+	soundinaudible = leftchannel == 15 && rightchannel == 15;
+	if (soundinaudible)
+		rightchannel = 14;
 
 #if 0
 	CenterWindow(8,1);
@@ -170,6 +217,8 @@ SetSoundLoc(fixed gx,fixed gy)
 void PlaySoundLocGlobal(word s,fixed gx,fixed gy)
 {
 	SetSoundLoc(gx,gy);
+	if (soundinaudible)
+		return;					// too far away to hear
 	SD_PositionSound(leftchannel,rightchannel);
 	if (SD_PlaySound(s))
 	{
