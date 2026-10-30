@@ -213,6 +213,7 @@ extern	void	SD_Startup(void),
 extern	boolean	SD_PlaySound(soundnames sound);
 extern	int		(*SD_PlayHook)(soundnames sound);
 extern	boolean	SD_PlaySample(byte *data,longword len,word priority);
+extern	boolean	SD_SoundHasVolume(soundnames sound);
 extern	void	SD_SetPosition(int leftvol,int rightvol),
 				SD_StopSound(void),
 				SD_WaitSoundDone(void),

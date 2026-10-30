@@ -1999,6 +1999,22 @@ SD_SetUserHook(void (* hook)(void))
 ///////////////////////////////////////////////////////////////////////////
 int		(*SD_PlayHook) (soundnames sound);
 
+///////////////////////////////////////////////////////////////////////////
+//
+//	SD_SoundHasVolume() - true if the sound would be played digitized on a
+//		device whose volume SD_SetPosition() sets (SB Pro mixer, GUS); the
+//		AdLib, the PC speaker, a plain SB and the Sound Source play every
+//		sound at full volume
+//
+///////////////////////////////////////////////////////////////////////////
+boolean
+SD_SoundHasVolume(soundnames sound)
+{
+	if (DigiMode != sds_SoundBlaster || (!SBProPresent && !GUSPresent))
+		return(false);
+	return(sound == LASTSOUND || DigiMap[sound] != -1);	// LASTSOUND: SD_PlaySample
+}
+
 void
 SD_PositionSound(int leftvol,int rightvol)
 {

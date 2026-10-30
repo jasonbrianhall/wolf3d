@@ -559,7 +559,7 @@ static void RespawnSound (objtype *ob)
 	if (netcontext != localplayer)
 	{
 		SetSoundLoc (ob->x,ob->y);
-		if (soundinaudible)
+		if (soundinaudible || (soundquiet && !SD_SoundHasVolume (LASTSOUND)))
 			return;
 		SD_PositionSound (leftchannel,rightchannel);
 	}
@@ -681,21 +681,26 @@ static void NetPickups (objtype *ob)
 =
 = NetPlaySound
 =
-= SD_PlayHook: the game plays a player's own sounds (shots, pickups, the
-= locked door, a pushwall...) unpositioned, which is right for the local
-= player but put everybody else's at full volume in our ears, however
-= far away they were. Those are played from where that player is, so
-= they get quieter with distance (SetSoundLoc) like the actors' sounds.
-= Anything else (the bosses' voices, the menus) is left alone: -1.
+= SD_PlayHook: the game plays some sounds unpositioned: a player's own
+= (shots, pickups, the locked door, a pushwall...), which is right for
+= the local player, and the bosses' and a few others' voices, meant to be
+= heard anywhere. In a netgame that put everybody's at full volume in our
+= ears, however far away and whatever walls were between. A sound made
+= while an actor thinks (obj: in RunFrame) is played from where that
+= actor is, so it fades with distance and closed doors like the rest.
+= Our own player's, and anything outside the game logic (menus, chat),
+= is left alone: -1.
 =
 ===================
 */
 
+static	boolean	inrunframe;		// RunFrame's actor loop: obj is the one thinking
+
 static int NetPlaySound (soundnames s)
 {
-	if (!netgame || netcontext == localplayer || !player || obj != player)
+	if (!netgame || !inrunframe || !obj || obj == np[localplayer].ob)
 		return -1;
-	PlaySoundLocGlobal (s,player->x,player->y);
+	PlaySoundLocGlobal (s,obj->x,obj->y);
 	return 0;
 }
 
@@ -2364,6 +2369,7 @@ static void RunFrame (long f)
 	MoveDoors ();
 	MovePWalls ();
 
+	inrunframe = true;
 	for (obj = playerobjs[0] ; obj ; obj = obj->next)
 	{
 		if (obj->obclass == playerobj)
@@ -2397,6 +2403,8 @@ static void RunFrame (long f)
 			DoActor (obj);
 		}
 	}
+
+	inrunframe = false;
 
 	gamestate.TimeCount += tics;
 	NetSetContext (localplayer);
