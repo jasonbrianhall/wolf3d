@@ -78,10 +78,9 @@ Blazkowicz Sprites" (Python 3 with Pillow, NumPy and SciPy)::
 
 A player coming back makes a teleport sound: Freedoom's, from
 ``msdos/RESPAWN.WAD`` next to the exe (its license: ``FREEDOOM.TXT``;
-both are in the release zip). ``-doomwad <file>`` takes it from another
-WAD instead, such as your own ``DOOM2.WAD``; without ``RESPAWN.WAD`` a
-Doom WAD in the game's directory is used, and without any it's an
-effect of our own. Both need a digitized sound
+both are in the release zip). Without ``RESPAWN.WAD`` a Doom WAD in
+the game's directory is used, and without any it's an effect of our
+own. Both need a digitized sound
 device; with none, it's the extra life sound.
 
 Sounds fade with distance: past 8 tiles (where the original tables level
