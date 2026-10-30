@@ -407,6 +407,181 @@ void NetKillPlayer (objtype *attacker)
 	}
 }
 
+/*
+-----------------------------------------------------------------------------
+
+ THE RESPAWN SOUND
+
+ A teleport sound (DSTELEPT), read from the WAD -doomwad <file> names,
+ else RESPAWN.WAD (Freedoom's, which comes with the game: FREEDOOM.TXT),
+ else the player's own DOOM2.WAD / DOOM.WAD / ... in the current
+ directory. Nothing of Doom's is in this program. Without any of them,
+ an effect of our own is made: a rising shimmer over a burst of noise.
+ Either is a digitized sound; with no digitized sound device the extra
+ life sound is played instead.
+
+-----------------------------------------------------------------------------
+*/
+
+#define RSRATE		7042		// the game's digitized sounds
+#define RSPRIORITY	40
+
+static	boolean	rstried;
+static	byte	*rsdata;
+static	long	rslen;
+
+static long GetLong (byte *p)
+{
+	return p[0] | (p[1]<<8) | ((long)p[2]<<16) | ((long)p[3]<<24);
+}
+
+// DSTELEPT from a Doom WAD, resampled to RSRATE; false if there isn't one
+static boolean LoadDoomTeleport (char *name)
+{
+	FILE	*f;
+	byte	hdr[12],ent[16],*lump,*out;
+	long	numlumps,dirofs,i,pos,size,rate,count,outlen,j,frac;
+
+	if (!(f = fopen (name,"rb")))
+		return false;
+	if (fread (hdr,1,12,f) != 12 || (memcmp (hdr,"IWAD",4) && memcmp (hdr,"PWAD",4)))
+	{
+		fclose (f);
+		return false;
+	}
+	numlumps = GetLong (hdr+4);
+	dirofs = GetLong (hdr+8);
+	if (numlumps <= 0 || numlumps > 65536 || fseek (f,dirofs,SEEK_SET))
+	{
+		fclose (f);
+		return false;
+	}
+	pos = size = -1;
+	for (i=0;i<numlumps;i++)
+	{
+		if (fread (ent,1,16,f) != 16)
+			break;
+		if (!strncmp ((char *)ent+8,"DSTELEPT",8))
+		{
+			pos = GetLong (ent);
+			size = GetLong (ent+4);			// the last one wins, as in Doom
+		}
+	}
+	if (pos < 0 || size < 8 || size > 0x40000 || !(lump = malloc (size)))
+	{
+		fclose (f);
+		return false;
+	}
+	if (fseek (f,pos,SEEK_SET) || fread (lump,1,size,f) != size)
+	{
+		free (lump);
+		fclose (f);
+		return false;
+	}
+	fclose (f);
+
+	// format 3: word 3, word rate, long count, count 8 bit unsigned samples,
+	// the first and last 16 of them padding
+	rate = lump[2] | (lump[3]<<8);
+	count = GetLong (lump+4);
+	if ((lump[0] | (lump[1]<<8)) != 3 || rate < 4000 || rate > 48000
+	|| count <= 32 || count > size-8)		// (no overflow with 32 bit longs)
+	{
+		free (lump);
+		return false;
+	}
+	count -= 32;
+	outlen = count * RSRATE / rate;
+	if (outlen < 1 || !(out = malloc (outlen)))
+	{
+		free (lump);
+		return false;
+	}
+	for (i=0;i<outlen;i++)
+	{
+		pos = i * rate / RSRATE;			// linear interpolation
+		frac = (i * rate % RSRATE) * 256 / RSRATE;
+		j = pos+1 < count ? pos+1 : pos;
+		out[i] = (lump[8+16+pos]*(256-frac) + lump[8+16+j]*frac) >> 8;
+	}
+	free (lump);
+	rsdata = out;
+	rslen = outlen;
+	return true;
+}
+
+// our own: 0.6 s, a tone sweeping up with a fast warble, over noise that
+// dies away, faded in and out
+static void MakeTeleportSound (void)
+{
+	long	i,n;
+	unsigned long seed = 0x1234567;		// not the game's random numbers
+	double	t,phase,freq,env,noise,lp,v;
+
+	n = RSRATE * 6 / 10;
+	if (!(rsdata = malloc (n)))
+		return;
+	phase = lp = 0;
+	for (i=0;i<n;i++)
+	{
+		t = (double)i / n;
+		freq = 220 + 1500*t*t + 90*sin (2*3.14159265*38*t);
+		phase += 2*3.14159265*freq / RSRATE;
+		seed = seed*1103515245 + 12345;
+		noise = ((seed >> 16) & 0xffff) / 32768.0 - 1;
+		lp += (noise - lp) * (0.15 + 0.6*t);		// brighter as it rises
+		env = (t < 0.08 ? t/0.08 : 1) * (1-t) * (1-t);
+		v = (0.55*sin (phase) + 0.45*sin (phase*2.01)*t + 0.7*lp*(1-t)) * env;
+		v = 128 + v*170;
+		rsdata[i] = v < 0 ? 0 : v > 255 ? 255 : (byte)v;
+	}
+	rslen = n;
+}
+
+static void LoadRespawnSound (void)
+{
+	static char *wads[] = {"RESPAWN.WAD","DOOM2.WAD","DOOM.WAD","PLUTONIA.WAD","TNT.WAD",
+		"DOOMU.WAD","FREEDOOM2.WAD","FREEDOOM1.WAD","DOOM1.WAD",NULL};
+	int		i;
+
+	rstried = true;
+	for (i=1;i<_argc-1;i++)
+		if (!stricmp (_argv[i],"-doomwad") && LoadDoomTeleport (_argv[i+1]))
+			return;
+	for (i=0;wads[i];i++)
+		if (LoadDoomTeleport (wads[i]))
+			return;
+	MakeTeleportSound ();
+}
+
+// from Respawn: everyone hears it, from where the player comes back
+static void RespawnSound (objtype *ob)
+{
+	if (!rstried)
+		LoadRespawnSound ();
+
+	if (netcontext != localplayer)
+	{
+		SetSoundLoc (ob->x,ob->y);
+		if (soundinaudible)
+			return;
+		SD_PositionSound (leftchannel,rightchannel);
+	}
+	if (DigiMode == sds_Off)
+	{
+		// nothing digitized: the next best thing
+		if (netcontext != localplayer)
+			PlaySoundLocGlobal (BONUS1UPSND,ob->x,ob->y);
+		else
+			SD_PlaySound (BONUS1UPSND);
+	}
+	else if (SD_PlaySample (rsdata,rslen,RSPRIORITY) && netcontext != localplayer)
+	{
+		globalsoundx = ob->x;			// UpdateSoundLoc keeps it placed
+		globalsoundy = ob->y;
+	}
+}
+
 static void Respawn (netplayer_t *p)
 {
 	objtype	*ob = p->ob;
@@ -427,6 +602,7 @@ static void Respawn (netplayer_t *p)
 	plux = ob->x >> UNSIGNEDSHIFT;
 	pluy = ob->y >> UNSIGNEDSHIFT;
 	ConnectAreas ();
+	RespawnSound (ob);
 
 	DrawHealth ();
 	DrawFace ();
@@ -489,8 +665,42 @@ static void NetPickups (objtype *ob)
 			for (i=0;i<numplayers;i++)
 				if (i != netcontext)
 					np[i].keys |= gamestate.keys;
+
+			// and show up on our status bar, whoever picked them up
+			// (DrawKeys draws only for the local player's context)
+			if (netcontext != localplayer)
+			{
+				i = netcontext;
+				NetSetContext (localplayer);
+				DrawKeys ();
+				NetSetContext (i);
+			}
 		}
 	}
+}
+
+
+/*
+===================
+=
+= NetPlaySound
+=
+= SD_PlayHook: the game plays a player's own sounds (shots, pickups, the
+= locked door, a pushwall...) unpositioned, which is right for the local
+= player but put everybody else's at full volume in our ears, however
+= far away they were. Those are played from where that player is, so
+= they get quieter with distance (SetSoundLoc) like the actors' sounds.
+= Anything else (the bosses' voices, the menus) is left alone: -1.
+=
+===================
+*/
+
+static int NetPlaySound (soundnames s)
+{
+	if (!netgame || netcontext == localplayer || !player || obj != player)
+		return -1;
+	PlaySoundLocGlobal (s,player->x,player->y);
+	return 0;
 }
 
 
@@ -583,10 +793,11 @@ static boolean SpawnSpotClear (netplayer_t *p)
 
 						 HOW THE OTHERS LOOK
 
-The other players are drawn with the SS sprites (eight directions, a gun,
-walking, shooting, pain and death frames), recolored so the uniform is a
-different color for each player and nobody takes them for an enemy.
-The copies are made from the game's own data when first needed.
+The other players are drawn with BJ from PLAYERS.WL6 when it's there,
+otherwise with the SS sprites (eight directions, a gun, walking,
+shooting, pain and death frames). Either way they're recolored (BJ's
+vest, the SS's uniform) so each player has a color and nobody takes
+them for an enemy. The copies are made when first needed.
 
 =============================================================================
 */
@@ -596,6 +807,138 @@ The copies are made from the game's own data when first needed.
 static	byte	*netshapes[MAXPLAYERS][NUMSSFRAMES];
 static	byte	netcolors[MAXPLAYERS][256];
 static	boolean	netcolorsmade;
+
+/*
+-----------------------------------------------------------------------------
+
+ PLAYERS.WL6 (PLAYERS.<the data's extension>), made by msdos/mkplayers.py
+ from a sprite sheet: BJ in 8 directions standing, walking, aiming and
+ firing, plus pain and death frames. When it's there the other players
+ are drawn with it instead of the SS; its team[] colors (the vest) are
+ the ones recolored per player.
+
+	char	magic[4]	"WLPS"
+	word	version		1
+	word	numframes
+	byte	team[256]
+	long	offset[numframes], word length[numframes]
+	...		frames, t_compshape like VSWAP's sprites
+
+ The scaler doesn't check what it reads, so every frame is checked here.
+
+-----------------------------------------------------------------------------
+*/
+
+#define PF_STAND	0			// + direction
+#define PF_WALK		8			// + walk frame*8 + direction
+#define PF_AIM		40			// + direction
+#define PF_FIRE		48			// + direction
+#define PF_PAIN		56
+#define PF_DIE1		57			// 57-60
+#define PF_DEAD		61
+#define PF_NUM		62
+
+#define PFFRAME		0x3c0		// frame numbers above every sprite's: the file's
+
+static	boolean	pftried,pfloaded;
+static	byte	*pfdata;
+static	byte	*pfframe[PF_NUM];
+static	word	pflength[PF_NUM];
+static	byte	pfteam[256];
+static	byte	*pfshapes[MAXPLAYERS][PF_NUM];
+
+static word GetWord (byte *p)
+{
+	return p[0] | (p[1]<<8);
+}
+
+static boolean CheckFrame (byte *f, unsigned len)
+{
+	unsigned	left,right,col,ofs,end,top,start;
+
+	if (len < 6)
+		return false;
+	left = GetWord (f);
+	right = GetWord (f+2);
+	if (left > right || right > 63 || 4+2*(right-left+1) > len)
+		return false;
+	for (col=0 ; col <= right-left ; col++)
+	{
+		ofs = GetWord (f+4+col*2);
+		for (;;)
+		{
+			if (ofs+2 > len)
+				return false;
+			end = GetWord (f+ofs);
+			if (!end)
+				break;
+			if (ofs+6 > len)
+				return false;
+			top = GetWord (f+ofs+2);
+			start = GetWord (f+ofs+4);
+			if ((end|start)&1 || start >= end || end > 128
+			|| (word)(top+start/2) >= len || (word)(top+end/2) > len
+			|| (word)(top+start/2) > (word)(top+end/2))
+				return false;
+			ofs += 6;
+		}
+	}
+	return true;
+}
+
+static void LoadPlayerSprites (void)
+{
+	char	fname[16];
+	FILE	*f;
+	long	size,ofs;
+	unsigned len;
+	int		i,n;
+
+	pftried = true;
+	strcpy (fname,"PLAYERS.");
+	strcat (fname,extension);
+	f = fopen (fname,"rb");
+	if (!f)
+		return;
+	fseek (f,0,SEEK_END);
+	size = ftell (f);
+	fseek (f,0,SEEK_SET);
+	if (size < 8+256 || size > 0x100000 || !(pfdata = malloc (size)))
+	{
+		fclose (f);
+		return;
+	}
+	if (fread (pfdata,1,size,f) != size)
+		size = 0;
+	fclose (f);
+
+	n = size ? GetWord (pfdata+6) : 0;
+	if (memcmp (pfdata,"WLPS",4) || GetWord (pfdata+4) != 1 || n < PF_NUM
+	|| 8+256+n*6 > size)
+		goto bad;
+	memcpy (pfteam,pfdata+8,256);
+	for (i=0;i<PF_NUM;i++)
+	{
+		byte *t = pfdata+8+256+i*4;
+		ofs = t[0] | (t[1]<<8) | ((long)t[2]<<16) | ((long)t[3]<<24);
+		len = GetWord (pfdata+8+256+n*4+i*2);
+		if (ofs < 0 || ofs+len > size || !CheckFrame (pfdata+ofs,len))
+			goto bad;
+		pfframe[i] = pfdata+ofs;
+		pflength[i] = len;
+	}
+	pfloaded = true;
+	return;
+
+bad:
+	free (pfdata);
+	pfdata = NULL;
+	{
+		char str[40];
+		sprintf (str,"%s is damaged: SS used",fname);
+		AddChatLine (str,7);
+	}
+}
 
 static void MakeColors (void)
 {
@@ -607,19 +950,37 @@ static void MakeColors (void)
 		{
 			netcolors[p][c] = c;
 			r = pal[c*3]; g = pal[c*3+1]; b = pal[c*3+2];
-			if (b < r+4 || b < g+4)
-				continue;			// only the blue of the uniform
-			switch (p)
+			if (pfloaded)
 			{
-			case 0: nr = r; ng = b; nb = g; break;			// green
-			case 1: nr = b; ng = g; nb = r; break;			// red
-			case 2: nr = b; ng = b*3/4; nb = r/2; break;	// gold
-			default: nr = ng = nb = (r+g+b*2)/3; break;		// white
+				// BJ's gold vest
+				if (!pfteam[c])
+					continue;
+				switch (p)
+				{
+				case 0: nr = b; ng = (r+g)/2; nb = b; break;		// green
+				case 1: nr = (r+g)/2; ng = b; nb = b; break;		// red
+				case 2: continue;									// gold
+				default: nr = ng = nb = (r+g)/2; break;				// white
+				}
+			}
+			else
+			{
+				if (b < r+4 || b < g+4)
+					continue;			// only the blue of the uniform
+				switch (p)
+				{
+				case 0: nr = r; ng = b; nb = g; break;			// green
+				case 1: nr = b; ng = g; nb = r; break;			// red
+				case 2: nr = b; ng = b*3/4; nb = r/2; break;	// gold
+				default: nr = ng = nb = (r+g+b*2)/3; break;		// white
+				}
 			}
 			best = c;
 			bestd = 0x7fffffff;
 			for (i=0;i<255;i++)
 			{
+				if (pfloaded && pfteam[i] && p != 2)
+					continue;			// not back to gold
 				dr = pal[i*3]-nr; dg = pal[i*3+1]-ng; db = pal[i*3+2]-nb;
 				d = dr*dr*3 + dg*dg*4 + db*db*2;
 				if (d < bestd)
@@ -633,33 +994,19 @@ static void MakeColors (void)
 	netcolorsmade = true;
 }
 
-memptr NetShape (int shapenum)
+// a copy of a shape with exactly the pixels the scaler reads recolored
+static byte *Recolor (byte *orig, unsigned length, int p)
 {
-	int		p,frame,page,col,src,end,start;
-	byte	*orig,*copy;
+	int		col,src,end,start;
+	byte	*copy;
 	word	*cmd,top;
 	t_compshape *shape;
 
-	p = (shapenum >> 10) & 3;
-	frame = shapenum & 0x3ff;
-	if (frame < SPR_SS_S_1 || frame > SPR_SS_SHOOT3)
-		return PM_GetSpritePage (frame);
-
-	copy = netshapes[p][frame-SPR_SS_S_1];
-	if (copy)
-		return copy;
-
-	if (!netcolorsmade)
-		MakeColors ();
-
-	page = PMSpriteStart + frame;
-	orig = PM_GetPage (page);
-	copy = malloc (PMPages[page].length);
+	copy = malloc (length);
 	if (!copy)
-		return orig;
-	memcpy (copy,orig,PMPages[page].length);
+		return NULL;
+	memcpy (copy,orig,length);
 
-	// recolor exactly the pixels the scaler reads
 	shape = (t_compshape *)orig;
 	for (col=0 ; col <= shape->rightpix-shape->leftpix ; col++)
 	{
@@ -673,7 +1020,39 @@ memptr NetShape (int shapenum)
 			cmd += 3;
 		}
 	}
+	return copy;
+}
 
+memptr NetShape (int shapenum)
+{
+	int		p,frame,page;
+	byte	*copy;
+
+	p = (shapenum >> 10) & 3;
+	frame = shapenum & 0x3ff;
+
+	if (!netcolorsmade)
+		MakeColors ();
+
+	if (frame >= PFFRAME)
+	{
+		frame -= PFFRAME;
+		if (!pfshapes[p][frame])
+			pfshapes[p][frame] = Recolor (pfframe[frame],pflength[frame],p);
+		return pfshapes[p][frame] ? pfshapes[p][frame] : pfframe[frame];
+	}
+
+	if (frame < SPR_SS_S_1 || frame > SPR_SS_SHOOT3)
+		return PM_GetSpritePage (frame);
+
+	copy = netshapes[p][frame-SPR_SS_S_1];
+	if (copy)
+		return copy;
+
+	page = PMSpriteStart + frame;
+	copy = Recolor (PM_GetPage (page),PMPages[page].length,p);
+	if (!copy)
+		return PM_GetPage (page);
 	netshapes[p][frame-SPR_SS_S_1] = copy;
 	return copy;
 }
@@ -702,9 +1081,14 @@ int NetPlayerShape (objtype *ob)
 		return 0;
 	p = &np[i];
 
+	if (!pftried)
+		LoadPlayerSprites ();
+
 	if (p->dead)
 	{
-		if (p->respawn < 8)
+		if (pfloaded)
+			frame = p->respawn < 24 ? PFFRAME+PF_DIE1+p->respawn/6 : PFFRAME+PF_DEAD;
+		else if (p->respawn < 8)
 			frame = SPR_SS_DIE_1;
 		else if (p->respawn < 16)
 			frame = SPR_SS_DIE_2;
@@ -725,6 +1109,20 @@ int NetPlayerShape (objtype *ob)
 	angle /= ANGLES/8;
 
 	wf = i == netcontext ? gamestate.weaponframe : p->weaponframe;
+
+	if (pfloaded)
+	{
+		// BJ aims and fires in every direction, not only at us
+		if (p->pain)
+			frame = PF_PAIN;
+		else if (wf)
+			frame = (wf == 2 ? PF_FIRE : PF_AIM) + angle;
+		else if (p->moving)
+			frame = PF_WALK + ((p->anim >> 14) & 3)*8 + angle;
+		else
+			frame = PF_STAND + angle;
+		return NETSHAPEFLAG | (i<<10) | (PFFRAME+frame);
+	}
 
 	if (p->pain)
 		frame = SPR_SS_PAIN_1;
@@ -1452,6 +1850,7 @@ void NetStartup (void)
 
 	netgame = true;
 	numplayers = nodes;
+	SD_PlayHook = NetPlaySound;
 	for (i=1;i<_argc;i++)
 		if (!stricmp (_argv[i],"-netlog"))
 			netlog = fopen ("NETLOG.TXT","w");
@@ -1662,6 +2061,9 @@ void NetLevelStart (void)
 	unsigned area;
 	objtype	*p0;
 	static int dx[4] = {1,0,-1,0}, dy[4] = {0,-1,0,1};
+
+	if (!rstried)
+		LoadRespawnSound ();	// now, not in the middle of a fight
 
 	player = np[netcontext].ob;
 	p0 = playerobjs[0];

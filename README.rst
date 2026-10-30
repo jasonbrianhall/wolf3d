@@ -48,10 +48,12 @@ on one and ``IPXNET CONNECT <address>`` on the others)::
 It's lockstep, like Doom: only the controls go over the network, so all
 machines run the same game. Player 1's episode, level and skill are
 used. A dead player comes back at the level start after three seconds;
-keys are shared. Players block each other like actors do, and can shoot
+keys are shared (and show on everyone's status bar). Players block each other like actors do, and can shoot
 each other (``-nofriendlyfire`` turns that off; player 1's choice is
-used). The other players are drawn with the SS sprites, recolored green,
-red, gold and white. Esc leaves the game and the others play on.
+used). The other players are drawn as BJ from ``PLAYERS.WL6`` (see
+below) when it's next to the game, otherwise with the SS sprites; either
+way recolored green, red, gold and white. Another player's shots,
+pickups and doors are heard from where that player is. Esc leaves the game and the others play on.
 T starts a chat message (Enter sends, Esc drops it); while typing,
 Alt+1 to Alt+0 send the chat macros, which SETUP edits
 (``CHATMACS.CFG``).
@@ -64,6 +66,29 @@ instead of 320 at view size 20, the same height, more angle); the status
 bar, menus and full screen pictures stay 320 wide in the middle, with
 black or matching sides. ``-vesa 848x480`` picks the mode, ``-vesabits``
 its depth. Without a wide VESA mode it stays in the normal VGA mode.
+
+``msdos/PLAYERS.WL6`` (copy it next to the exe as ``PLAYERS.WL1``,
+``.SOD``... for the other data; the release zip has it named for each)
+holds BJ in eight directions standing, walking,
+aiming and firing, with pain and death frames. ``msdos/mkplayers.py``
+makes it from a sprite sheet laid out like AndersonMiguel1105's "New BJ
+Blazkowicz Sprites" (Python 3 with Pillow, NumPy and SciPy)::
+
+  python3 msdos/mkplayers.py bj_sheet.png PLAYERS.WL6 --preview check.png
+
+A player coming back makes a teleport sound: Freedoom's, from
+``msdos/RESPAWN.WAD`` next to the exe (its license: ``FREEDOOM.TXT``;
+both are in the release zip). ``-doomwad <file>`` takes it from another
+WAD instead, such as your own ``DOOM2.WAD``; without ``RESPAWN.WAD`` a
+Doom WAD in the game's directory is used, and without any it's an
+effect of our own. Both need a digitized sound
+device; with none, it's the extra life sound.
+
+Sounds fade with distance: past 8 tiles (where the original tables level
+off at about half volume) the volume halves every 8 tiles, and a sound
+over about 40 tiles away isn't played. That's on the Sound Blaster Pro
+(or later) and the Gravis UltraSound; AdLib and PC speaker sounds have no
+volume, so those just drop out past that distance.
 
 Tab shows an automap like Doom's (Tab again: the map over the 3D view,
 again: off; ``+`` / ``-`` zoom). It draws the walls around floor you've

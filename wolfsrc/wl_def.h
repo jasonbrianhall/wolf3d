@@ -851,6 +851,10 @@ void DrawAllPlayBorderSides (void);
 #define	PlaySoundLocActor(s,ob)		PlaySoundLocGlobal(s,(ob)->x,(ob)->y)
 void	PlaySoundLocGlobal(word s,fixed gx,fixed gy);
 void UpdateSoundLoc(void);
+void	SetSoundLoc(fixed gx,fixed gy);
+extern	fixed	globalsoundx,globalsoundy;
+extern	int		leftchannel,rightchannel;
+extern	boolean	soundinaudible;
 
 
 /*

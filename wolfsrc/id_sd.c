@@ -112,6 +112,7 @@ void	GUS_Shutdown (void);
 void	GUS_Service (void);
 void	GUS_AdLibWrite (int reg, int val);
 void	GUS_PlaySample (byte *data, longword len);
+void	GUS_SetVolume (int leftpos, int rightpos);
 void	GUS_StopSample (void);
 static	void			(*SoundUserHook)(void);
 volatile soundnames		SoundNumber,DigiNumber;
@@ -129,6 +130,7 @@ volatile long			LocalTime;
 volatile boolean		DigiPlaying;
 static	volatile boolean	DigiMissed,DigiLastSegment;
 static	memptr volatile	DigiNextAddr;
+static	byte		*DigiRaw;		// SD_PlaySample's buffer (else the page file)
 static	volatile word	DigiNextLen;
 
 //	SoundBlaster variables
@@ -1023,6 +1025,9 @@ asm	mov	al,10	// bright green
 asm	out	dx,al
 #endif
 
+	if (DigiRaw)
+		return(DigiRaw + (longword)page * PMPageSize);
+
 	addr = PM_GetSoundPage(page);
 	PM_SetPageLock(PMSoundStart + page,pml_Locked);
 
@@ -1136,7 +1141,10 @@ SD_SetPosition(int leftpos,int rightpos)
 	switch (DigiMode)
 	{
 	case sds_SoundBlaster:
-		SDL_PositionSBP(leftpos,rightpos);
+		if (GUSPresent)
+			GUS_SetVolume(leftpos,rightpos);
+		else
+			SDL_PositionSBP(leftpos,rightpos);
 		break;
 	}
 }
@@ -1151,6 +1159,7 @@ SD_PlayDigitized(word which,int leftpos,int rightpos)
 		return;
 
 	SD_StopDigitized();
+	DigiRaw = nil;
 	if (which >= NumDigi)
 		Quit("SD_PlayDigitized: bad sound number");
 
@@ -1988,12 +1997,87 @@ SD_SetUserHook(void (* hook)(void))
 //		sound to be played. Each channel ranges from 0 to 15.
 //
 ///////////////////////////////////////////////////////////////////////////
+int		(*SD_PlayHook) (soundnames sound);
+
 void
 SD_PositionSound(int leftvol,int rightvol)
 {
 	LeftPosition = leftvol;
 	RightPosition = rightvol;
 	nextsoundpos = true;
+}
+
+///////////////////////////////////////////////////////////////////////////
+//
+//	SD_PlaySample() - plays a digitized sound from memory (8 bit unsigned,
+//		7042 Hz, like the page file's) at the given priority, positioned
+//		if SD_PositionSound() was called. Not played (false) without a
+//		digitized sound device. The data must stay until it's done.
+//
+///////////////////////////////////////////////////////////////////////////
+boolean
+SD_PlaySample(byte *data,longword len,word priority)
+{
+	boolean	ispos;
+	int		lp,rp;
+	word	seglen;
+	memptr	addr;
+
+	lp = LeftPosition;
+	rp = RightPosition;
+	LeftPosition = 0;
+	RightPosition = 0;
+	ispos = nextsoundpos;
+	nextsoundpos = false;
+
+	if (DigiMode == sds_Off || !data || !len)
+		return(false);
+	if (len > 0xffff)
+		len = 0xffff;				// DigiLeft is a word
+
+	if ((DigiMode == sds_PC) && (SoundMode == sdm_PC))
+	{
+		if (priority < SoundPriority)
+			return(false);
+		SDL_PCStopSound();
+	}
+	else if (priority < DigiPriority)
+		return(false);
+
+	SD_StopDigitized();
+	SD_SetPosition(lp,rp);
+
+	DigiRaw = data;
+	DigiPage = 0;
+	DigiLeft = len;
+	DigiLastStart = 1;				// no pages to unlock
+	DigiLastEnd = 0;
+
+	seglen = (DigiLeft >= PMPageSize)? PMPageSize : DigiLeft;
+	addr = SDL_LoadDigiSegment(DigiPage++);
+
+	DigiPlaying = true;
+	DigiLastSegment = false;
+
+	SDL_PlayDigiSegment(addr,seglen);
+	DigiLeft -= seglen;
+	if (!DigiLeft)
+		DigiLastSegment = true;
+
+	SoundPositioned = ispos;
+	if ((DigiMode == sds_PC) && (SoundMode == sdm_PC))
+	{
+		SoundNumber = LASTSOUND;	// not one of the game's
+		SoundPriority = priority;
+	}
+	else
+	{
+		DigiNumber = LASTSOUND;
+		DigiPriority = priority;
+	}
+
+	SD_Poll();
+	return(true);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -2007,6 +2091,15 @@ SD_PlaySound(soundnames sound)
 	boolean		ispos;
 	SoundCommon	*s;
 	int	lp,rp;
+
+	// an unpositioned sound the game may want to place (wl_net.c: one
+	// another player made); the hook plays it positioned, or returns -1
+	if (!nextsoundpos && SD_PlayHook)
+	{
+		int	r = SD_PlayHook (sound);
+		if (r >= 0)
+			return r;
+	}
 
 	lp = LeftPosition;
 	rp = RightPosition;
