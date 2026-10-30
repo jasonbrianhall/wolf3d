@@ -854,7 +854,7 @@ void UpdateSoundLoc(void);
 void	SetSoundLoc(fixed gx,fixed gy);
 extern	fixed	globalsoundx,globalsoundy;
 extern	int		leftchannel,rightchannel;
-extern	boolean	soundinaudible;
+extern	boolean	soundinaudible,soundquiet;
 
 
 /*

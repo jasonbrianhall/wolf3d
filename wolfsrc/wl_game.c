@@ -118,8 +118,68 @@ byte lefttable[ATABLEMAX][ATABLEMAX * 2] = {
 
 #define SOUNDNEARDIST	8			// tiles: where the tables level off
 #define SOUNDHALFDIST	8			// tiles: the volume halves every this far
+#define SOUNDWALLDIST	16			// tiles added for a sound behind closed doors
+#define SOUNDQUIET		3			// volume (0-15) below which a device that
+									// can't turn it down doesn't play it
 
-boolean	soundinaudible;
+boolean	soundinaudible,soundquiet;
+
+/*
+= SoundHeard: is a sound at tile x,y in a room joined to the listener's by
+= open doors (areaconnect, as for the guards hearing a shot)? A sound on a
+= door, pushwall or ambush tile counts as in any room it touches.
+= The listener is this machine's player, also in a netgame, where
+= areabyplayer is every player's rooms together.
+*/
+
+static boolean SoundHeard (int x, int y)
+{
+	static	byte	seen[NUMAREAS],queue[NUMAREAS];
+	objtype	*me;
+	int		head,tail,a,b,i,tx,ty,area,found;
+	static int dx[5] = {0,1,-1,0,0}, dy[5] = {0,0,0,1,-1};
+
+	me = netgame ? playerobjs[localplayer] : player;
+	if (!me || x < 0 || y < 0 || x >= MAPSIZE || y >= MAPSIZE)
+		return true;
+	a = me->areanumber;
+	if (a < 0 || a >= NUMAREAS)
+		return true;
+
+	memset (seen,0,sizeof(seen));
+	seen[a] = 1;
+	queue[0] = a;
+	head = 0;
+	tail = 1;
+	while (head < tail)
+	{
+		a = queue[head++];
+		for (b=0;b<NUMAREAS;b++)
+			if (areaconnect[a][b] && !seen[b])
+			{
+				seen[b] = 1;
+				queue[tail++] = b;
+			}
+	}
+
+	found = false;
+	for (i=0;i<5;i++)
+	{
+		tx = x+dx[i];
+		ty = y+dy[i];
+		if (tx < 0 || ty < 0 || tx >= MAPSIZE || ty >= MAPSIZE)
+			continue;
+		area = MAPSPOT(tx,ty,0) - AREATILE;
+		if (area < 0 || area >= NUMAREAS)
+			continue;
+		if (seen[area])
+			return true;
+		found = true;
+		if (i == 0)
+			break;				// on a floor tile: its own room only
+	}
+	return !found;				// in a wall somehow: don't muffle
+}
 
 static int SoundFalloff (int pos, long dist)
 {
@@ -162,6 +222,14 @@ SetSoundLoc(fixed gx,fixed gy)
 	ay = labs (gy);
 	dist = ax > ay ? ax + (ay*3>>3) : ay + (ax*3>>3);
 
+	// through closed doors: muffled, as if a good deal farther away
+	if (!SoundHeard ((gx+viewx) >> TILESHIFT,(gy+viewy) >> TILESHIFT))
+	{
+		if (dist < ((long)SOUNDNEARDIST << TILESHIFT))
+			dist = (long)SOUNDNEARDIST << TILESHIFT;
+		dist += (long)SOUNDWALLDIST << TILESHIFT;
+	}
+
 //
 // calculate newx
 //
@@ -190,6 +258,7 @@ SetSoundLoc(fixed gx,fixed gy)
 	// 15/15 is silence, which SD_SetPosition refuses: keep a playing
 	// sound barely there, and don't start a new one
 	soundinaudible = leftchannel == 15 && rightchannel == 15;
+	soundquiet = 15 - (leftchannel < rightchannel ? leftchannel : rightchannel) < SOUNDQUIET;
 	if (soundinaudible)
 		rightchannel = 14;
 
@@ -219,6 +288,8 @@ void PlaySoundLocGlobal(word s,fixed gx,fixed gy)
 	SetSoundLoc(gx,gy);
 	if (soundinaudible)
 		return;					// too far away to hear
+	if (soundquiet && !SD_SoundHasVolume(s))
+		return;					// would be played full volume: rather not
 	SD_PositionSound(leftchannel,rightchannel);
 	if (SD_PlaySound(s))
 	{
